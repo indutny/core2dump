@@ -1,70 +1,82 @@
 #include <assert.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <mach-o/loader.h>
+#include <mach-o/nlist.h>
 
 #include "error.h"
 #include "obj.h"
+#include "common.h"
 
 
 struct cd_obj_s {
-  int fd;
+  void* addr;
+  size_t size;
   int is_x64;
-  union {
-    struct mach_header ia32;
-    struct mach_header_64 x64;
-  } hdr;
+  struct mach_header* header;
+  cd_hashmap_t* syms;
 };
-
-
-static cd_error_t cd_obj_read_header(cd_obj_t* obj);
-static cd_error_t cd_obj_read_cmd(cd_obj_t* obj,
-                                  struct load_command* cmd,
-                                  size_t size,
-                                  size_t* res);
-static cd_error_t cd_obj_read_seg(cd_obj_t* obj, struct segment_command* cmd);
-static cd_error_t cd_obj_read_seg_64(cd_obj_t* obj,
-                                     struct segment_command_64* cmd);
 
 
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
   cd_obj_t* obj;
-  uint32_t magic;
+  struct stat sbuf;
 
   obj = malloc(sizeof(*obj));
   if (obj == NULL) {
     *err = cd_error_str(kCDErrNoMem, "cd_obj_t");
     goto failed_malloc;
   }
-  obj->fd = fd;
 
-  *err = cd_pread(fd, &magic, sizeof(magic), 0, NULL);
-  if (!cd_is_ok(*err))
-    goto failed_pread;
+  /* mmap the file */
+  if (fstat(fd, &sbuf) != 0) {
+    *err = cd_error_num(kCDErrFStat, errno);
+    goto failed_fstat;
+  }
+  obj->size = sbuf.st_size;
+
+  if (obj->size < sizeof(*obj->header)) {
+    *err = cd_error(kCDErrNotEnoughMagic);
+    goto failed_fstat;
+  }
+
+  obj->addr = mmap(NULL, obj->size, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
+  if (obj->addr == MAP_FAILED) {
+    *err = cd_error_num(kCDErrMmap, errno);
+    goto failed_fstat;
+  }
+
+  /* Technically the only difference between X64 and IA32 header is a
+   * reserved field
+   */
+  obj->header = obj->addr;
 
   /* Big-Endian not supported */
-  if (magic == MH_CIGAM || magic == MH_CIGAM_64) {
-    *err = cd_error_num(kCDErrBigEndianMagic, magic);
-    goto failed_pread;
+  if (obj->header->magic == MH_CIGAM || obj->header->magic == MH_CIGAM_64) {
+    *err = cd_error_num(kCDErrBigEndianMagic, obj->header->magic);
+    goto failed_magic_check;
   }
 
-  if (magic != MH_MAGIC && magic != MH_MAGIC_64) {
-    *err = cd_error_num(kCDErrInvalidMagic, magic);
-    goto failed_pread;
+  if (obj->header->magic != MH_MAGIC && obj->header->magic != MH_MAGIC_64) {
+    *err = cd_error_num(kCDErrInvalidMagic, obj->header->magic);
+    goto failed_magic_check;
   }
-  obj->is_x64 = magic == MH_MAGIC_64;
 
-  /* Time to read header */
-  *err = cd_obj_read_header(obj);
-  if (!cd_is_ok(*err))
-    goto failed_pread;
+  obj->is_x64 = obj->header->magic == MH_MAGIC_64;
 
   *err = cd_ok();
   return obj;
 
-failed_pread:
+failed_magic_check:
+  munmap(obj->addr, obj->size);
+  obj->addr = NULL;
+
+failed_fstat:
   free(obj);
 
 failed_malloc:
@@ -73,169 +85,189 @@ failed_malloc:
 
 
 void cd_obj_free(cd_obj_t* obj) {
+  munmap(obj->addr, obj->size);
+  obj->addr = NULL;
+
+  if (obj->syms != NULL)
+    cd_hashmap_free(obj->syms);
+  obj->syms = NULL;
+
   free(obj);
 }
 
 
-void* cd_obj_get(cd_obj_t* obj, intptr_t addr, size_t size) {
-  return NULL;
-}
-
-
-#define CHECKED(expr)                                                         \
+#define CD_ITERATE_LCMDS(BODY)                                                \
     do {                                                                      \
-      err = (expr);                                                           \
-      if (!cd_is_ok(err))                                                     \
-        goto fatal;                                                           \
-    } while (0)                                                               \
+      size_t sz;                                                              \
+      char* ptr;                                                              \
+      char* end;                                                              \
+      uint32_t left;                                                          \
+      struct load_command* cmd;                                               \
+      sz = obj->is_x64 ?                                                      \
+          sizeof(struct mach_header_64) :                                     \
+          sizeof(struct mach_header);                                         \
+      /* Go through load commands to find matching segment */                 \
+      ptr = (char*) obj->addr + sz;                                           \
+      end = (char*) obj->addr + obj->size;                                    \
+      left = obj->header->ncmds;                                              \
+      for (left = obj->header->ncmds;                                         \
+           left > 0;                                                          \
+           ptr += cmd->cmdsize, left--) {                                     \
+        if (ptr >= end) {                                                     \
+          err = cd_error(kCDErrLoadCommandOOB);                               \
+          goto fatal;                                                         \
+        }                                                                     \
+        cmd = (struct load_command*) ptr;                                     \
+        if (ptr + cmd->cmdsize > end) {                                       \
+          err = cd_error(kCDErrLoadCommandOOB);                               \
+          goto fatal;                                                         \
+        }                                                                     \
+        do BODY while(0);                                                     \
+      }                                                                       \
+    } while (0);                                                              \
 
 
-cd_error_t cd_obj_read_header(cd_obj_t* obj) {
+cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
   cd_error_t err;
-  size_t hdr_size;
-  static char cmd_st[16384];  /* 16kb is usally enough to load the commands */
-  char* cmds;
-  size_t cmds_size;
-  struct {
-    size_t file;
-    size_t mem_read;
-    size_t mem_scan;
-  } offs;
-  uint32_t left;
 
-  /* Start with a small buffer */
-  cmds_size = sizeof(cmd_st);
-  cmds = cmd_st;
-
-  hdr_size = obj->is_x64 ? sizeof(obj->hdr.x64) : sizeof(obj->hdr.ia32);
-  CHECKED(cd_pread(obj->fd, &obj->hdr.x64, hdr_size, 0, NULL));
-  if (obj->hdr.x64.filetype != MH_CORE)
-    return cd_error_num(kCDErrNotCore, obj->hdr.x64.filetype);
-
-  /* Iterate through commands */
-
-  left = obj->hdr.x64.ncmds;
-  offs.file = hdr_size;
-  offs.mem_read = 0;
-  offs.mem_scan = 0;
-  while (left > 0) {
-    size_t res;
-    int read;
-
-    CHECKED(cd_pread(obj->fd,
-                     cmds + offs.mem_read,
-                     cmds_size - offs.mem_read,
-                     offs.file,
-                     &read));
-    offs.file += read;
-
-    /* Try to parse whole buffer */
-    read += offs.mem_read;
-    while (left > 0 && offs.mem_read < (size_t) read) {
-      err = cd_obj_read_cmd(obj,
-                            (struct load_command*) (cmds + offs.mem_scan),
-                            read - offs.mem_scan,
-                            &res);
-      if (err.code == kCDErrCmdNotEnough) {
-        /* Not enough space, extend cmds and try again */
-        if (cmds_size < res) {
-          char* ncmds;
-
-          ncmds = malloc(res);
-          if (ncmds == NULL) {
-            err = cd_error_str(kCDErrNoMem, "obj cmds buf");
-            goto fatal;
-          }
-
-          memcpy(ncmds, cmds, cmds_size);
-          if (cmds != cmd_st)
-            free(cmds);
-          cmds = ncmds;
-          cmds_size = res;
-        }
-
-        /* Skip parsed data to free space in a buffer */
-        memmove(cmds, cmds + offs.mem_read, read - offs.mem_read);
-
-        /* Read more data from file */
-        offs.mem_read = read - offs.mem_read;
-        offs.mem_scan = 0;
-        break;
-      } else if (!cd_is_ok(err)) {
-        goto fatal;
-      }
-
-      /* Command parsed - move forward */
-      offs.mem_scan += res;
-      assert(offs.mem_read < offs.mem_scan);
-      offs.mem_read = offs.mem_scan;
-
-      left--;
-    }
-
-    /* Fully read buffer */
-    if (offs.mem_scan >= (size_t) read) {
-      offs.mem_scan = 0;
-      offs.mem_read = 0;
-    }
+  if (obj->header->filetype != MH_CORE) {
+    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
+    goto fatal;
   }
-  return cd_ok();
+
+  CD_ITERATE_LCMDS({
+    uint64_t vmaddr;
+    uint64_t vmsize;
+    uint64_t fileoff;
+    char* r;
+
+    if (cmd->cmd == LC_SEGMENT) {
+      struct segment_command* seg;
+
+      seg = (struct segment_command*) cmd;
+
+      vmaddr = seg->vmaddr;
+      vmsize = seg->vmsize;
+      fileoff = seg->fileoff;
+    } else if (cmd->cmd == LC_SEGMENT_64) {
+      struct segment_command_64* seg;
+
+      seg = (struct segment_command_64*) cmd;
+
+      vmaddr = seg->vmaddr;
+      vmsize = seg->vmsize;
+      fileoff = seg->fileoff;
+    } else {
+      continue;
+    }
+
+    if (vmaddr > addr || vmsize + vmaddr < addr + size)
+      continue;
+
+    r = (char*) obj->addr + fileoff + (addr - vmaddr);
+    if (r + size > end) {
+      err = cd_error(kCDErrLoadCommandOOB);
+      goto fatal;
+    }
+
+    *res = r;
+    return cd_ok();
+  })
+
+  *res = NULL;
+  err = cd_error(kCDErrNotFound);
 
 fatal:
-  if (cmds != cmd_st)
-    free(cmds);
   return err;
 }
 
 
-cd_error_t cd_obj_read_cmd(cd_obj_t* obj,
-                           struct load_command* cmd,
-                           size_t size,
-                           size_t* res) {
-  size_t expected;
+cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
+  cd_error_t err;
+  void* res;
 
-  if (cmd->cmdsize == 0)
-    return cd_error(kCDErrCmdZeroSize);
+  if (obj->syms != NULL)
+    goto lookup;
 
-  /* Align command sizes */
-  *res = cmd->cmdsize;
-  if (size < cmd->cmdsize)
-    return cd_error(kCDErrCmdNotEnough);
+  CD_ITERATE_LCMDS({
+    struct symtab_command* symtab;
+    struct nlist* nl;
+    struct nlist_64* nl64;
+    size_t nsz;
+    unsigned int i;
 
-  /* Command is here - parse it */
-  switch (cmd->cmd) {
-    case LC_SEGMENT:
-      expected = sizeof(struct segment_command);
-      break;
-    case LC_SEGMENT_64:
-      expected = sizeof(struct segment_command_64);
-      break;
-    default:
-      expected = 0;
-      break;
+    if (cmd->cmd != LC_SYMTAB)
+      continue;
+
+    symtab = (struct symtab_command*) cmd;
+    nsz = obj->is_x64 ? sizeof(struct nlist_64) : sizeof(struct nlist);
+    if (symtab->symoff + symtab->nsyms * nsz > obj->size) {
+      err = cd_error(kCDErrSymtabOOB);
+      goto fatal;
+    }
+
+    obj->syms = cd_hashmap_new(symtab->nsyms * 2);
+    if (obj->syms == NULL) {
+      err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
+      goto fatal;
+    }
+
+    if (obj->is_x64)
+      nl64 = (struct nlist_64*) ((char*) obj->addr + symtab->symoff);
+    else
+      nl = (struct nlist*) ((char*) obj->addr + symtab->symoff);
+
+    for (i = 0; i < symtab->nsyms; i++) {
+      char* name;
+      int len;
+      uint8_t type;
+      uint64_t value;
+
+      /* XXX Add bounds checks */
+      name = obj->addr;
+      if (obj->is_x64) {
+        name += symtab->stroff + nl64[i].n_un.n_strx;
+        type = nl64[i].n_type;
+      } else {
+        name += symtab->stroff + nl[i].n_un.n_strx;
+        type = nl[i].n_type;
+      }
+      type &= N_TYPE;
+
+      if (obj->is_x64)
+        value = nl64[i].n_value;
+      else
+        value = nl[i].n_value;
+      if (value == 0)
+        continue;
+
+      len = strlen(name);
+      if (len == 0)
+        continue;
+
+      cd_hashmap_insert(obj->syms, name, len, (void*) value);
+    }
+
+    break;
+  })
+  if (obj->syms == NULL) {
+    err = cd_error(kCDErrNotFound);
+    goto fatal;
   }
 
-  if (expected != 0 && expected > size)
-    return cd_error_num(kCDErrCmdSmallerThanExpected, expected);
-
-  switch (cmd->cmd) {
-    case LC_SEGMENT:
-      return cd_obj_read_seg(obj, (struct segment_command*) cmd);
-    case LC_SEGMENT_64:
-      return cd_obj_read_seg_64(obj, (struct segment_command_64*) cmd);
+lookup:
+  assert(sizeof(void*) == sizeof(*addr));
+  res = cd_hashmap_get(obj->syms, sym, strlen(sym));
+  if (res == NULL) {
+    err = cd_error(kCDErrNotFound);
+  } else {
+    *addr = (uint64_t) res;
+    err = cd_ok();
   }
 
-  return cd_ok();
+fatal:
+  return err;
 }
 
 
-cd_error_t cd_obj_read_seg(cd_obj_t* obj, struct segment_command* cmd) {
-  return cd_ok();
-}
-
-
-cd_error_t cd_obj_read_seg_64(cd_obj_t* obj, struct segment_command_64* cmd) {
-  return cd_ok();
-}
-
-#undef CHECKED
+#undef CD_ITERATE_LCMDS

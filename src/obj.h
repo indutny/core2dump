@@ -1,7 +1,7 @@
 #ifndef SRC_OBJ_H_
 #define SRC_OBJ_H_
 
-#include <sys/types.h>
+#include <stdint.h>
 
 #include "error.h"
 
@@ -13,9 +13,7 @@ typedef struct cd_obj_s cd_obj_t;
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err);
 void cd_obj_free(cd_obj_t* obj);
 
-void* cd_obj_get(cd_obj_t* obj, intptr_t addr, size_t size);
-
-/* Utils */
-cd_error_t cd_pread(int fd, void* buf, size_t nbyte, off_t offset, int* read);
+cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res);
+cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr);
 
 #endif  /* SRC_OBJ_H_ */

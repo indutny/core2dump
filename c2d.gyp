@@ -5,7 +5,7 @@
     "sources": [
       "src/core.c",
       "src/error.c",
-      "src/obj-common.c",
+      "src/common.c",
     ],
     "conditions": [
       # Mach-O

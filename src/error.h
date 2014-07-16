@@ -7,16 +7,18 @@ typedef enum cd_error_code_e cd_error_code_t;
 enum cd_error_code_e {
   kCDErrOk = 0x0,
   kCDErrInputNotFound = 0x1,
-  kCDErrOutputNotFound = 0x2,
-  kCDErrBigEndianMagic = 0x3,
-  kCDErrInvalidMagic = 0x4,
-  kCDErrNoMem = 0x5,
-  kCDErrPread = 0x6,
-  kCDErrPreadNotEnough = 0x7,
-  kCDErrNotCore = 0x8,
-  kCDErrCmdNotEnough = 0x9,  /* Not really a error */
-  kCDErrCmdZeroSize = 0xa,
-  kCDErrCmdSmallerThanExpected = 0xb,
+  kCDErrBinaryNotFound = 0x2,
+  kCDErrOutputNotFound = 0x3,
+  kCDErrBigEndianMagic = 0x4,
+  kCDErrInvalidMagic = 0x5,
+  kCDErrNotEnoughMagic = 0x6,
+  kCDErrNoMem = 0x7,
+  kCDErrFStat = 0x8,
+  kCDErrMmap = 0x9,
+  kCDErrNotCore = 0xa,
+  kCDErrLoadCommandOOB = 0xb,
+  kCDErrNotFound = 0xc,
+  kCDErrSymtabOOB = 0xd,
 };
 
 struct cd_error_s {
