@@ -18,6 +18,7 @@ struct cd_state_s {
   cd_obj_t* binary;
   cd_obj_thread_t thread;
   int output;
+  int ptr_size;
 
   cd_list_t queue;
   cd_list_t nodes;
@@ -38,6 +39,7 @@ static cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                                      void* map,
                                      int type,
                                      int* size);
+static cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr);
 static cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end);
 
 
@@ -181,6 +183,8 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto fatal;
 
+  state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
+
   state.zap_bit = cd_obj_is_x64(state.core) ? 0x7000000000000000LL : 0x70000000;
 
   state.binary = cd_obj_new(binary, &err);
@@ -291,11 +295,11 @@ cd_error_t cd_print_dump(cd_state_t* state) {
 
 #define V8_OBJ(ptr) ((void*) ((char*) ptr - cd_v8_HeapObjectTag))
 
-#define CORE_PTR(ptr, out)                                                    \
+#define CORE_PTR(ptr, off, out)                                               \
     do {                                                                      \
       cd_error_t err;                                                         \
       err = cd_obj_get(state->core,                                           \
-                       (uint64_t) (ptr),                                      \
+                       (uint64_t) ((char*) (ptr) + (off)),                    \
                        sizeof(*(out)),                                        \
                        (void**) &(out));                                      \
       if (!cd_is_ok(err))                                                     \
@@ -305,7 +309,6 @@ cd_error_t cd_print_dump(cd_state_t* state) {
 cd_error_t cd_collect_roots(cd_state_t* state) {
   cd_error_t err;
   uint64_t off;
-  uint64_t delta;
   void* stack;
   size_t stack_size;
   unsigned int i;
@@ -319,8 +322,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
   if (!cd_is_ok(err))
     return err;
 
-  delta = cd_obj_is_x64(state->core) ? 8 : 4;
-  for (off = 0; off < stack_size; off += delta)
+  for (off = 0; off < stack_size; off += state->ptr_size)
     cd_collect_root(state, *(void**)((char*) stack + off));
 
   /* Visit registers */
@@ -344,7 +346,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
     return cd_error(kCDErrNotObject);
   obj = V8_OBJ(obj);
 
-  CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
+  CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
   map = *pmap;
 
   /* That has a heapobject map */
@@ -353,7 +355,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   map = V8_OBJ(map);
 
   /* Just to verify that the object has live map */
-  CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, attrs);
+  CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
 
   if (cd_list_push(&state->queue, obj) != 0)
     return cd_error_str(kCDErrNoMem, "cd_list_push queue");
@@ -376,11 +378,13 @@ cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb) {
 cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
   void** pmap;
   void* map;
+  char* start;
+  char* end;
   uint8_t* ptype;
   int type;
   cd_error_t err;
 
-  CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
+  CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
 
   /* If zapped - the node was already added */
   map = *pmap;
@@ -388,13 +392,16 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
     return cd_ok();
   *pmap = (void*) ((intptr_t) map | state->zap_bit);
 
-  /* That has a heapobject map */
-  if (!V8_IS_HEAPOBJECT(map))
-    return cd_error(kCDErrNotObject);
+  /* Enqueue map itself */
+  err = cd_queue_ptr(state, map);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Untag pointer */
   map = V8_OBJ(map);
 
   /* Load object type */
-  CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, ptype);
+  CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
   type = *ptype;
 
   /* Push node */
@@ -408,6 +415,9 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
     return cd_ok();
   }
 
+  start = NULL;
+  end = NULL;
+
   if (type == T(JSObject, JS_OBJECT) ||
       type == T(JSValue, JS_VALUE) ||
       type == T(JSDate, JS_DATE) ||
@@ -418,31 +428,38 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
       type == T(JSRegExp, JS_REGEXP) ||
       type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
       type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
-      type == T(JSMessageObject, JS_MESSAGE_OBJECT)) {
+      type == T(JSMessageObject, JS_MESSAGE_OBJECT) ||
+      /* NOTE: Function has non-heap fields, but who cares! */
+      type == T(JSFunction, JS_FUNCTION)) {
     /* General object */
-    char* start;
-    char* end;
     int size;
+    int off;
 
     err = cd_v8_get_obj_size(state, map, type, &size);
     if (!cd_is_ok(err))
       return err;
 
-    CORE_PTR(obj + cd_v8_class_JSObject__properties__FixedArray, start);
-    CORE_PTR(obj +
-                cd_v8_class_JSObject__properties__FixedArray +
-                size,
-             end);
+    off = cd_v8_class_JSObject__properties__FixedArray;
+    CORE_PTR(obj, off, start);
+    CORE_PTR(obj, off + size, end);
+  } else if (type == T(Map, MAP)) {
+    int off;
 
-    err = cd_queue_space(state, start, end);
+    /* XXX Map::kPrototypeOffset = Map::kInstanceAttributes + kIntSize */
+    off = cd_v8_class_Map__instance_attributes__int + 4;
+    CORE_PTR(obj, off, start);
+
+    /* Constructor + Prototype */
+    CORE_PTR(obj, off + state->ptr_size * 2, end);
   } else {
+    /* Unknown type - ignore */
+    return cd_ok();
   }
-  err = cd_ok();
 
-  if (!cd_is_ok(err))
-    return err;
+  if (start != NULL && end != NULL)
+    err = cd_queue_space(state, start, end);
 
-  return cd_ok();
+  return err;
 }
 
 
@@ -453,7 +470,7 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
   int instance_size;
   uint8_t* ptr;
 
-  CORE_PTR(map + cd_v8_class_Map__instance_size__int, ptr);
+  CORE_PTR(map, cd_v8_class_Map__instance_size__int, ptr);
   instance_size = *ptr;
 
   /* Constant size */
@@ -469,20 +486,28 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
 }
 
 
+cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr) {
+  if (!V8_IS_HEAPOBJECT(ptr))
+    return cd_error(kCDErrNotObject);
+  ptr = V8_OBJ(ptr);
+
+  if (cd_list_push(&state->queue, ptr) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_list_push queue space");
+
+  return cd_ok();
+}
+
+
 cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
   size_t delta;
 
   delta = cd_obj_is_x64(state->core) ? 8 : 4;
   for (; start < end; start += delta) {
-    void* ptr;
+    cd_error_t err;
 
-    ptr = *(void**) start;
-    if (!V8_IS_HEAPOBJECT(ptr))
-      return cd_error(kCDErrNotObject);
-    ptr = V8_OBJ(ptr);
-
-    if (cd_list_push(&state->queue, ptr) != 0)
-      return cd_error_str(kCDErrNoMem, "cd_list_push queue space");
+    err = cd_queue_ptr(state, *(void**) start);
+    if (!cd_is_ok(err))
+      return err;
   }
 
   return cd_ok();

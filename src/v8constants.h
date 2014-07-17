@@ -37,6 +37,7 @@
     X(class_GlobalObject__native_context__Context)                            \
     X(class_HeapNumber__value__double)                                        \
     X(class_HeapObject__map__Map)                                             \
+    X(class_JSObject__elements__Object)                                       \
     X(class_JSArray__length__Object)                                          \
     X(class_JSFunction__literals_or_bindings__FixedArray)                     \
     X(class_JSFunction__next_function_link__Object)                           \
