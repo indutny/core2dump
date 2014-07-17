@@ -11,7 +11,6 @@
 #include "v8constants.h"
 
 typedef struct cd_state_s cd_state_t;
-typedef cd_error_t (*cd_visit_cb)(cd_state_t* state, void* obj);
 
 struct cd_state_s {
   cd_obj_t* core;
@@ -32,8 +31,8 @@ static cd_error_t cd_obj2json(int input, int binary, int output);
 static cd_error_t cd_print_dump(cd_state_t* state);
 static cd_error_t cd_collect_roots(cd_state_t* state);
 static cd_error_t cd_collect_root(cd_state_t* state, void* ptr);
-static cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb);
-static cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb);
+static cd_error_t cd_visit_roots(cd_state_t* state);
+static cd_error_t cd_visit_root(cd_state_t* state, void* obj);
 static cd_error_t cd_print_obj(cd_state_t* state, void* obj);
 static cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                                      void* map,
@@ -211,7 +210,7 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto failed_get_thread;
 
-  err = cd_visit_roots(&state, cd_print_obj);
+  err = cd_visit_roots(&state);
   if (!cd_is_ok(err))
     goto failed_get_thread;
 
@@ -364,9 +363,9 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
 }
 
 
-cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb) {
+cd_error_t cd_visit_roots(cd_state_t* state) {
   while (cd_list_len(&state->queue) != 0)
-    cd_visit_root(state, cd_list_shift(&state->queue), cb);
+    cd_visit_root(state, cd_list_shift(&state->queue));
 
   return cd_ok();
 }
@@ -375,7 +374,7 @@ cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb) {
 #define T(M, S) cd_v8_type_##M##__##S##_TYPE
 
 
-cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
+cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
   void** pmap;
   void* map;
   char* start;
