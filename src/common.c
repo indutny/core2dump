@@ -5,6 +5,9 @@
 #include "common.h"
 
 
+static const int kCDListGrowRate = 16;
+
+
 uint32_t cd_jenkins(const char* str, unsigned int len) {
   uint32_t hash;
   unsigned int i;
@@ -83,4 +86,47 @@ void* cd_hashmap_get(cd_hashmap_t* map,
     /* Move forward */
     index = (index + 1) % map->count;
   } while (1);
+}
+
+
+int cd_list_init(cd_list_t* list, unsigned int size) {
+  list->items = malloc(sizeof(*list->items) * size);
+  list->size = size;
+  list->off = 0;
+
+  return list->items == NULL ? -1 : 0;
+}
+
+
+void cd_list_free(cd_list_t* list) {
+  free(list->items);
+  list->items = NULL;
+}
+
+
+int cd_list_push(cd_list_t* list, void* value) {
+  unsigned int i;
+
+  /* Skip if duplicate found */
+  for (i = 0; i < list->off; i++)
+    if (list->items[i] == value)
+      return 0;
+
+  /* Realloc */
+  if (list->off == list->size) {
+    void** items;
+
+    items = malloc(sizeof(*items) * (list->size + kCDListGrowRate));
+    if (items == NULL)
+      return -1;
+
+    memcpy(items, list->items, sizeof(*items) * list->size);
+    free(list->items);
+    list->items = items;
+  }
+
+  /* Push item on list */
+  list->items[list->off++] = value;
+
+  return 0;
 }

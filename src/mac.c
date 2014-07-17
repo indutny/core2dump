@@ -96,6 +96,11 @@ void cd_obj_free(cd_obj_t* obj) {
 }
 
 
+int cd_obj_is_x64(cd_obj_t* obj) {
+  return obj->is_x64;
+}
+
+
 #define CD_ITERATE_LCMDS(BODY)                                                \
     do {                                                                      \
       size_t sz;                                                              \
@@ -206,7 +211,7 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       goto fatal;
     }
 
-    obj->syms = cd_hashmap_new(symtab->nsyms * 2);
+    obj->syms = cd_hashmap_new(symtab->nsyms * 4);
     if (obj->syms == NULL) {
       err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
       goto fatal;
@@ -264,6 +269,50 @@ lookup:
     *addr = (uint64_t) res;
     err = cd_ok();
   }
+
+fatal:
+  return err;
+}
+
+
+cd_error_t cd_obj_iterate(cd_obj_t* obj, cd_obj_iterate_cb cb, void* arg) {
+  cd_error_t err;
+
+  if (obj->header->filetype != MH_CORE) {
+    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
+    goto fatal;
+  }
+
+  CD_ITERATE_LCMDS({
+    uint64_t vmsize;
+    uint64_t fileoff;
+
+    if (cmd->cmd == LC_SEGMENT) {
+      struct segment_command* seg;
+
+      seg = (struct segment_command*) cmd;
+
+      vmsize = seg->vmsize;
+      fileoff = seg->fileoff;
+    } else if (cmd->cmd == LC_SEGMENT_64) {
+      struct segment_command_64* seg;
+
+      seg = (struct segment_command_64*) cmd;
+
+      vmsize = seg->vmsize;
+      fileoff = seg->fileoff;
+    } else {
+      continue;
+    }
+
+    err = cb(arg, (char*) obj->addr + fileoff, vmsize);
+    if (cd_is_ok(err))
+      return err;
+    else if (err.code != kCDErrNotFound)
+      return err;
+  })
+
+  err = cd_error(kCDErrNotFound);
 
 fatal:
   return err;

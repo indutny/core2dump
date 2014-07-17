@@ -5,13 +5,26 @@
 #include <unistd.h>
 
 #include "error.h"
+#include "common.h"
 #include "obj.h"
 #include "version.h"
+#include "v8constants.h"
+
+typedef struct cd_state_s cd_state_t;
+
+struct cd_state_s {
+  cd_obj_t* core;
+  cd_obj_t* binary;
+  int output;
+
+  cd_list_t roots;
+};
 
 static cd_error_t run(const char* input,
                       const char* binary,
                       const char* output);
-static cd_error_t obj2json(int input, int binary, int output);
+static cd_error_t cd_obj2json(int input, int binary, int output);
+static cd_error_t cd_find_global_cb(void* arg, void* addr, uint64_t size);
 
 void cd_print_version() {
   fprintf(stderr,
@@ -129,7 +142,7 @@ cd_error_t run(const char* input, const char* binary, const char* output) {
     goto failed_open_output;
   }
 
-  err = obj2json(fds.input, fds.binary, fds.output);
+  err = cd_obj2json(fds.input, fds.binary, fds.output);
 
   /* Clean-up */
   close(fds.output);
@@ -145,37 +158,107 @@ failed_open_input:
 }
 
 
-cd_error_t obj2json(int input, int binary, int output) {
+cd_error_t cd_obj2json(int input, int binary, int output) {
   cd_error_t err;
-  cd_obj_t* obj;
-  cd_obj_t* bobj;
-  void* addr;
-  uint64_t addr_off;
+  cd_state_t state;
 
-  obj = cd_obj_new(input, &err);
+  state.core = cd_obj_new(input, &err);
   if (!cd_is_ok(err))
     goto fatal;
 
-  bobj = cd_obj_new(binary, &err);
+  state.binary = cd_obj_new(binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
 
-  err = cd_obj_get(obj, 0x7fff5fc00000LL - 8, 8, &addr);
+  state.output = output;
+
+  err = cd_v8_init(state.binary, state.core);
   if (!cd_is_ok(err))
-    goto failed_obj_get;
+    goto failed_v8_init;
 
-  err = cd_obj_get_sym(bobj, "_main", &addr_off);
-  if (!cd_is_ok(err))
-    goto failed_obj_get;
+  if (cd_list_init(&state.roots, 4) != 0)
+    goto failed_v8_init;
 
-  fprintf(stdout, "%llx\n", addr_off);
+  /* Find Global object instances in memory */
+  err = cd_obj_iterate(state.core, cd_find_global_cb, &state);
+  if (!cd_is_ok(err) && err.code != kCDErrNotFound)
+    goto failed_iterate;
 
-failed_obj_get:
-  cd_obj_free(bobj);
+  fprintf(stdout, "found %d global objects\n", state.roots.off);
+
+failed_iterate:
+  cd_list_free(&state.roots);
+
+failed_v8_init:
+  cd_obj_free(state.binary);
 
 failed_binary_obj:
-  cd_obj_free(obj);
+  cd_obj_free(state.core);
 
 fatal:
   return err;
 }
+
+
+#define V8_IS_HEAPOBJECT(ptr)                                                 \
+    ((((intptr_t) ptr) & cd_v8_HeapObjectTagMask) == cd_v8_HeapObjectTag)
+
+#define V8_OBJ(ptr) ((void*) ((char*) ptr - cd_v8_HeapObjectTag))
+
+#define CORE_PTR(ptr, out)                                                    \
+    do {                                                                      \
+      cd_error_t err;                                                         \
+      err = cd_obj_get(state->core,                                           \
+                       (uint64_t) (ptr),                                      \
+                       sizeof(*(out)),                                        \
+                       (void**) &(out));                                      \
+      if (!cd_is_ok(err))                                                     \
+        return err;                                                           \
+    } while (0);                                                              \
+
+
+cd_error_t cd_find_global_cb(void* arg, void* addr, uint64_t size) {
+  cd_state_t* state;
+  uint64_t off;
+  uint64_t delta;
+
+  state = arg;
+  delta = cd_obj_is_x64(state->core) ? 8 : 4;
+
+  for (off = 0; off < size; off += delta) {
+    void* obj;
+    void** pmap;
+    void* map;
+    uint8_t* attrs;
+
+    obj = *(void**)(addr + off);
+
+    /* Find v8 heapobject */
+    if (!V8_IS_HEAPOBJECT(obj))
+      continue;
+    obj = V8_OBJ(obj);
+
+    CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
+    map = *pmap;
+
+    /* That has a heapobject map */
+    if (!V8_IS_HEAPOBJECT(map))
+      continue;
+    map = V8_OBJ(map);
+
+    CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, attrs);
+    if (*attrs != (uint8_t) cd_v8_type_JSGlobalObject__JS_GLOBAL_OBJECT_TYPE)
+      continue;
+
+    if (cd_list_push(&state->roots, obj) != 0)
+      return cd_error_str(kCDErrNoMem, "cd_list_push roots");
+    return cd_ok();
+  }
+
+  return cd_error(kCDErrNotFound);
+}
+
+
+#undef V8_IS_HEAPOBJECT
+#undef V8_OBJ
+#undef CORE_PTR

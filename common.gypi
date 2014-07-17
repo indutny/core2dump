@@ -9,7 +9,6 @@
     "msvs_multi_core_compile": "0",  # we do enable multicore compiles, but not using the V8 way
     "gcc_version%": "unknown",
     "clang%": 1,
-    "fips_dir%": "false",
     "conditions": [
       ["GENERATOR == 'ninja'", {
         "OBJ_DIR": "<(PRODUCT_DIR)/obj",
@@ -51,12 +50,6 @@
       ],
     },
     "conditions": [
-      ["fips_dir != 'false'", {
-        "make_global_settings": [
-          ["CC", "<(fips_dir)/bin/fipsld"],
-          ["LINK", "<(fips_dir)/bin/fipsld"],
-        ],
-      }],
       ["target_arch=='ia32'", {
         "xcode_settings": {"ARCHS": ["i386"]},
       }],

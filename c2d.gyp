@@ -6,6 +6,7 @@
       "src/core.c",
       "src/error.c",
       "src/common.c",
+      "src/v8constants.c",
     ],
     "conditions": [
       # Mach-O
