@@ -5,7 +5,7 @@
 #include "common.h"
 
 
-static const int kCDListGrowRate = 16;
+static const int kCDListGrowRate = 256;
 
 
 uint32_t cd_jenkins(const char* str, unsigned int len) {
@@ -105,13 +105,6 @@ void cd_list_free(cd_list_t* list) {
 
 
 int cd_list_push(cd_list_t* list, void* value) {
-  unsigned int i;
-
-  /* Skip if duplicate found */
-  for (i = 0; i < list->off; i++)
-    if (list->items[i] == value)
-      return 0;
-
   /* Realloc */
   if (list->off == list->size) {
     void** items;
@@ -129,4 +122,23 @@ int cd_list_push(cd_list_t* list, void* value) {
   list->items[list->off++] = value;
 
   return 0;
+}
+
+
+void* cd_list_shift(cd_list_t* list) {
+  void* r;
+
+  if (list->off == 0)
+    return NULL;
+
+  r = list->items[0];
+  memmove(list->items, list->items + 1, list->size * sizeof(*list->items));
+  list->off--;
+
+  return r;
+}
+
+
+unsigned int cd_list_len(cd_list_t* list) {
+  return list->off;
 }

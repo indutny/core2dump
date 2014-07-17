@@ -19,6 +19,8 @@ enum cd_error_code_e {
   kCDErrLoadCommandOOB = 0xb,
   kCDErrNotFound = 0xc,
   kCDErrSymtabOOB = 0xd,
+  kCDErrThreadStateOOB = 0xe,
+  kCDErrThreadStateInvalidSize = 0xf
 };
 
 struct cd_error_s {

@@ -45,7 +45,12 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
     goto failed_fstat;
   }
 
-  obj->addr = mmap(NULL, obj->size, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
+  obj->addr = mmap(NULL,
+                   obj->size,
+                   PROT_READ | PROT_WRITE,
+                   MAP_FILE | MAP_PRIVATE,
+                   fd,
+                   0);
   if (obj->addr == MAP_FAILED) {
     *err = cd_error_num(kCDErrMmap, errno);
     goto failed_fstat;
@@ -311,6 +316,117 @@ cd_error_t cd_obj_iterate(cd_obj_t* obj, cd_obj_iterate_cb cb, void* arg) {
     else if (err.code != kCDErrNotFound)
       return err;
   })
+
+  err = cd_error(kCDErrNotFound);
+
+fatal:
+  return err;
+}
+
+
+cd_error_t cd_obj_get_thread(cd_obj_t* obj,
+                             unsigned int index,
+                             cd_obj_thread_t* thread) {
+  cd_error_t err;
+
+  if (obj->header->filetype != MH_CORE) {
+    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
+    goto fatal;
+  }
+
+  CD_ITERATE_LCMDS({
+    char* ptr;
+    size_t size;
+    char* end;
+
+    if (cmd->cmd != LC_THREAD)
+      continue;
+
+    end = (char*) cmd + cmd->cmdsize;
+    for (ptr = (char*) cmd + 8; ptr < end; ptr += size) {
+      uint32_t flavor;
+      uint32_t count;
+      struct x86_thread_state* state;
+
+      flavor = *((uint32_t*) ptr);
+      count = *((uint32_t*) ptr + 1);
+      size = 8 + 4 * count;
+
+      /* Thread state is too big */
+      if (ptr + size > end) {
+        err = cd_error(kCDErrThreadStateOOB);
+        goto fatal;
+      }
+
+      if (flavor != x86_THREAD_STATE)
+        continue;
+
+      if (count != x86_THREAD_STATE_COUNT) {
+        err = cd_error(kCDErrThreadStateInvalidSize);
+        goto fatal;
+      }
+
+      /* We are looking for different index */
+      if (index != 0) {
+        index--;
+        continue;
+      }
+
+      state = (struct x86_thread_state*) (ptr + 8);
+      if (obj->is_x64) {
+        thread->regs.count = 21;
+        thread->regs.values[0] = state->uts.ts64.__rax;
+        thread->regs.values[1] = state->uts.ts64.__rbx;
+        thread->regs.values[2] = state->uts.ts64.__rcx;
+        thread->regs.values[3] = state->uts.ts64.__rdx;
+        thread->regs.values[4] = state->uts.ts64.__rdi;
+        thread->regs.values[5] = state->uts.ts64.__rsi;
+        thread->regs.values[6] = state->uts.ts64.__rbp;
+        thread->regs.values[7] = state->uts.ts64.__rsp;
+        thread->regs.values[8] = state->uts.ts64.__r8;
+        thread->regs.values[9] = state->uts.ts64.__r9;
+        thread->regs.values[10] = state->uts.ts64.__r10;
+        thread->regs.values[11] = state->uts.ts64.__r11;
+        thread->regs.values[12] = state->uts.ts64.__r12;
+        thread->regs.values[13] = state->uts.ts64.__r13;
+        thread->regs.values[14] = state->uts.ts64.__r14;
+        thread->regs.values[15] = state->uts.ts64.__r15;
+        thread->regs.values[16] = state->uts.ts64.__rip;
+        thread->regs.values[17] = state->uts.ts64.__rflags;
+        thread->regs.values[18] = state->uts.ts64.__cs;
+        thread->regs.values[19] = state->uts.ts64.__fs;
+        thread->regs.values[20] = state->uts.ts64.__gs;
+
+        thread->stack.top = state->uts.ts64.__rsp;
+        thread->stack.frame = state->uts.ts64.__rbp;
+        thread->stack.bottom = 0x7fff5fc00000LL;
+      } else {
+        thread->regs.count = 16;
+        thread->regs.values[0] = state->uts.ts32.__eax;
+        thread->regs.values[1] = state->uts.ts32.__ebx;
+        thread->regs.values[2] = state->uts.ts32.__ecx;
+        thread->regs.values[3] = state->uts.ts32.__edx;
+        thread->regs.values[4] = state->uts.ts32.__edi;
+        thread->regs.values[5] = state->uts.ts32.__esi;
+        thread->regs.values[6] = state->uts.ts32.__ebp;
+        thread->regs.values[7] = state->uts.ts32.__esp;
+        thread->regs.values[8] = state->uts.ts32.__ss;
+        thread->regs.values[9] = state->uts.ts32.__eflags;
+        thread->regs.values[10] = state->uts.ts32.__eip;
+        thread->regs.values[11] = state->uts.ts32.__cs;
+        thread->regs.values[12] = state->uts.ts32.__ds;
+        thread->regs.values[13] = state->uts.ts32.__es;
+        thread->regs.values[14] = state->uts.ts32.__fs;
+        thread->regs.values[15] = state->uts.ts32.__gs;
+
+        thread->stack.top = state->uts.ts32.__esp;
+        thread->stack.frame = state->uts.ts32.__ebp;
+        thread->stack.bottom = 0xc0000000;
+      }
+
+      return cd_ok();
+    }
+  });
 
   err = cd_error(kCDErrNotFound);
 

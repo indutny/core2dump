@@ -11,20 +11,29 @@
 #include "v8constants.h"
 
 typedef struct cd_state_s cd_state_t;
+typedef cd_error_t (*cd_visit_cb)(cd_state_t* state, void* obj);
 
 struct cd_state_s {
   cd_obj_t* core;
   cd_obj_t* binary;
+  cd_obj_thread_t thread;
   int output;
 
-  cd_list_t roots;
+  cd_list_t queue;
+  cd_list_t nodes;
 };
 
 static cd_error_t run(const char* input,
                       const char* binary,
                       const char* output);
 static cd_error_t cd_obj2json(int input, int binary, int output);
-static cd_error_t cd_find_global_cb(void* arg, void* addr, uint64_t size);
+static cd_error_t cd_print_dump(cd_state_t* state);
+static cd_error_t cd_collect_roots(cd_state_t* state);
+static cd_error_t cd_collect_root(cd_state_t* state, void* ptr);
+static cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb);
+static cd_error_t cd_visit_root(cd_state_t* state, cd_visit_cb cb);
+static cd_error_t cd_print_obj(cd_state_t* state, void* obj);
+
 
 void cd_print_version() {
   fprintf(stderr,
@@ -176,18 +185,29 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto failed_v8_init;
 
-  if (cd_list_init(&state.roots, 4) != 0)
+  if (cd_list_init(&state.queue, 32) != 0)
     goto failed_v8_init;
 
-  /* Find Global object instances in memory */
-  err = cd_obj_iterate(state.core, cd_find_global_cb, &state);
-  if (!cd_is_ok(err) && err.code != kCDErrNotFound)
-    goto failed_iterate;
+  if (cd_list_init(&state.nodes, 32) != 0)
+    goto failed_nodes_init;
 
-  fprintf(stdout, "found %d global objects\n", state.roots.off);
+  err = cd_obj_get_thread(state.core, 0, &state.thread);
+  if (!cd_is_ok(err))
+    goto failed_get_thread;
 
-failed_iterate:
-  cd_list_free(&state.roots);
+  err = cd_collect_roots(&state);
+  if (!cd_is_ok(err))
+    goto failed_get_thread;
+
+  err = cd_print_dump(&state);
+  if (!cd_is_ok(err))
+    goto failed_get_thread;
+
+failed_get_thread:
+  cd_list_free(&state.nodes);
+
+failed_nodes_init:
+  cd_list_free(&state.queue);
 
 failed_v8_init:
   cd_obj_free(state.binary);
@@ -197,6 +217,66 @@ failed_binary_obj:
 
 fatal:
   return err;
+}
+
+
+cd_error_t cd_print_dump(cd_state_t* state) {
+  cd_error_t err;
+
+  /* XXX Could be in a separate file */
+  dprintf(
+      state->output,
+      "{\n"
+      "  \"snapshot\": {\n"
+      "    \"title\": \"heapdump by core2dump\",\n"
+      "    \"uid\": %d,\n"
+      "    \"meta\": {\n"
+      "      \"node_fields\": [\n"
+      "        \"type\", \"name\", \"id\", \"self_size\", \"edge_count\",\n"
+      "        \"trace_node_id\"\n"
+      "      ],\n"
+      "      \"node_types\": [\n"
+      "        [ \"hidden\", \"array\", \"string\", \"object\", \"code\",\n"
+      "          \"closure\", \"regexp\", \"number\", \"native\",\n"
+      "          \"synthetic\", \"concatenated string\", \"sliced string\" ],\n"
+      "        \"string\", \"number\", \"number\", \"number\", \"number\",\n"
+      "        \"number\"\n"
+      "      ],\n"
+      "      \"edge_fields\": [ \"type\", \"name_or_index\", \"to_node\" ],\n"
+      "      \"edge_types\": [\n"
+      "        [ \"context\", \"element\", \"property\", \"internal\",\n"
+      "          \"hidden\", \"shortcut\", \"weak\" ],\n"
+      "        \"string_or_number\", \"node\"\n"
+      "      ],\n"
+      "      \"trace_function_info_fields\": [\n"
+      "        \"function_id\", \"name\", \"script_name\", \"script_id\",\n"
+      "        \"line\", \"column\"\n"
+      "      ],\n"
+      "      \"trace_node_fields\": [\n"
+      "        \"id\", \"function_info_index\", \"count\", \"size\",\n"
+      "        \"children\"\n"
+      "      ]\n"
+      "    },\n"
+      "    \"node_count\": %d,\n"
+      "    \"edge_count\": %d,\n"
+      "    \"trace_function_count\": %d\n"
+      "  },\n"
+      "  \"nodes\": [],\n"
+      "  \"edges\": [],\n"
+      "  \"trace_function_infos\": [],\n"
+      "  \"trace_tree\": [],\n"
+      "  \"strings\": []\n"
+      "}\n",
+      42,
+      1,
+      2,
+      3);
+
+  err = cd_visit_roots(state, cd_print_obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_ok();
 }
 
 
@@ -216,46 +296,81 @@ fatal:
         return err;                                                           \
     } while (0);                                                              \
 
-
-cd_error_t cd_find_global_cb(void* arg, void* addr, uint64_t size) {
-  cd_state_t* state;
+cd_error_t cd_collect_roots(cd_state_t* state) {
+  cd_error_t err;
   uint64_t off;
   uint64_t delta;
+  void* stack;
+  size_t stack_size;
+  unsigned int i;
 
-  state = arg;
+  /* Visit stack */
+  stack_size = state->thread.stack.bottom - state->thread.stack.top;
+  err = cd_obj_get(state->core,
+                   state->thread.stack.top,
+                   stack_size,
+                   &stack);
+  if (!cd_is_ok(err))
+    return err;
+
   delta = cd_obj_is_x64(state->core) ? 8 : 4;
+  for (off = 0; off < stack_size; off += delta)
+    cd_collect_root(state, *(void**)((char*) stack + off));
 
-  for (off = 0; off < size; off += delta) {
-    void* obj;
-    void** pmap;
-    void* map;
-    uint8_t* attrs;
+  /* Visit registers */
+  for (i = 0; i < state->thread.regs.count; i++)
+    cd_collect_root(state, (void*) (intptr_t) state->thread.regs.values[i]);
 
-    obj = *(void**)(addr + off);
+  return cd_ok();
+}
 
-    /* Find v8 heapobject */
-    if (!V8_IS_HEAPOBJECT(obj))
-      continue;
-    obj = V8_OBJ(obj);
 
-    CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
-    map = *pmap;
+cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
+  void* obj;
+  void** pmap;
+  void* map;
+  uint8_t* attrs;
 
-    /* That has a heapobject map */
-    if (!V8_IS_HEAPOBJECT(map))
-      continue;
-    map = V8_OBJ(map);
+  obj = ptr;
 
-    CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, attrs);
-    if (*attrs != (uint8_t) cd_v8_type_JSGlobalObject__JS_GLOBAL_OBJECT_TYPE)
-      continue;
+  /* Find v8 heapobject */
+  if (!V8_IS_HEAPOBJECT(obj))
+    return cd_error(kCDErrNotFound);
+  obj = V8_OBJ(obj);
 
-    if (cd_list_push(&state->roots, obj) != 0)
-      return cd_error_str(kCDErrNoMem, "cd_list_push roots");
-    return cd_ok();
-  }
+  CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
+  map = *pmap;
 
-  return cd_error(kCDErrNotFound);
+  /* That has a heapobject map */
+  if (!V8_IS_HEAPOBJECT(map))
+    return cd_error(kCDErrNotFound);
+  map = V8_OBJ(map);
+
+  /* Just to verify that the object has live map */
+  CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, attrs);
+
+  if (cd_list_push(&state->queue, obj) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_list_push queue");
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb) {
+  while (cd_list_len(&state->queue) != 0)
+    cd_visit_root(cd_list_shift(&state->queue), cb);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_visit_root(cd_state_t* state, cd_visit_cb cb) {
+  return cd_ok();
+}
+
+
+cd_error_t cd_print_obj(cd_state_t* state, void* obj) {
+  return cd_ok();
 }
 
 

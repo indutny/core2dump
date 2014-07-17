@@ -39,6 +39,9 @@ void* cd_hashmap_get(cd_hashmap_t* map,
 
 int cd_list_init(cd_list_t* list, unsigned int size);
 void cd_list_free(cd_list_t* list);
+
 int cd_list_push(cd_list_t* list, void* value);
+void* cd_list_shift(cd_list_t* list);
+unsigned int cd_list_len(cd_list_t* list);
 
 #endif  /* SRC_COMMON_H */
