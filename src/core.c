@@ -21,6 +21,7 @@ struct cd_state_s {
 
   cd_list_t queue;
   cd_list_t nodes;
+  intptr_t zap_bit;
 };
 
 static cd_error_t run(const char* input,
@@ -31,8 +32,13 @@ static cd_error_t cd_print_dump(cd_state_t* state);
 static cd_error_t cd_collect_roots(cd_state_t* state);
 static cd_error_t cd_collect_root(cd_state_t* state, void* ptr);
 static cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb);
-static cd_error_t cd_visit_root(cd_state_t* state, cd_visit_cb cb);
+static cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb);
 static cd_error_t cd_print_obj(cd_state_t* state, void* obj);
+static cd_error_t cd_v8_get_obj_size(cd_state_t* state,
+                                     void* map,
+                                     int type,
+                                     int* size);
+static cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end);
 
 
 void cd_print_version() {
@@ -80,10 +86,10 @@ int main(int argc, char** argv) {
     switch (c) {
       case 'v':
         cd_print_version();
-        break;
+        return 0;
       case 'h':
         cd_print_help(argv[0]);
-        break;
+        return 0;
       case 'i':
         input = optarg;
         break;
@@ -175,6 +181,8 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto fatal;
 
+  state.zap_bit = cd_obj_is_x64(state.core) ? 0x7000000000000000LL : 0x70000000;
+
   state.binary = cd_obj_new(binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
@@ -196,6 +204,10 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
     goto failed_get_thread;
 
   err = cd_collect_roots(&state);
+  if (!cd_is_ok(err))
+    goto failed_get_thread;
+
+  err = cd_visit_roots(&state, cd_print_obj);
   if (!cd_is_ok(err))
     goto failed_get_thread;
 
@@ -221,8 +233,6 @@ fatal:
 
 
 cd_error_t cd_print_dump(cd_state_t* state) {
-  cd_error_t err;
-
   /* XXX Could be in a separate file */
   dprintf(
       state->output,
@@ -271,10 +281,6 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       1,
       2,
       3);
-
-  err = cd_visit_roots(state, cd_print_obj);
-  if (!cd_is_ok(err))
-    return err;
 
   return cd_ok();
 }
@@ -335,7 +341,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
 
   /* Find v8 heapobject */
   if (!V8_IS_HEAPOBJECT(obj))
-    return cd_error(kCDErrNotFound);
+    return cd_error(kCDErrNotObject);
   obj = V8_OBJ(obj);
 
   CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
@@ -343,7 +349,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
 
   /* That has a heapobject map */
   if (!V8_IS_HEAPOBJECT(map))
-    return cd_error(kCDErrNotFound);
+    return cd_error(kCDErrNotObject);
   map = V8_OBJ(map);
 
   /* Just to verify that the object has live map */
@@ -358,15 +364,132 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
 
 cd_error_t cd_visit_roots(cd_state_t* state, cd_visit_cb cb) {
   while (cd_list_len(&state->queue) != 0)
-    cd_visit_root(cd_list_shift(&state->queue), cb);
+    cd_visit_root(state, cd_list_shift(&state->queue), cb);
 
   return cd_ok();
 }
 
 
-cd_error_t cd_visit_root(cd_state_t* state, cd_visit_cb cb) {
+#define T(M, S) cd_v8_type_##M##__##S##_TYPE
+
+
+cd_error_t cd_visit_root(cd_state_t* state, void* obj, cd_visit_cb cb) {
+  void** pmap;
+  void* map;
+  uint8_t* ptype;
+  int type;
+  cd_error_t err;
+
+  CORE_PTR(obj + cd_v8_class_HeapObject__map__Map, pmap);
+
+  /* If zapped - the node was already added */
+  map = *pmap;
+  if (((intptr_t) map & state->zap_bit) == state->zap_bit)
+    return cd_ok();
+  *pmap = (void*) ((intptr_t) map | state->zap_bit);
+
+  /* That has a heapobject map */
+  if (!V8_IS_HEAPOBJECT(map))
+    return cd_error(kCDErrNotObject);
+  map = V8_OBJ(map);
+
+  /* Load object type */
+  CORE_PTR(map + cd_v8_class_Map__instance_attributes__int, ptype);
+  type = *ptype;
+
+  /* Push node */
+  if (cd_list_push(&state->nodes, obj) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_list_push nodes");
+
+  /* Mimique the v8's behaviour, see HeapObject::IterateBody */
+
+  if (type < cd_v8_FirstNonstringType) {
+    /* Strings... ignore for now */
+    return cd_ok();
+  }
+
+  if (type == T(JSObject, JS_OBJECT) ||
+      type == T(JSValue, JS_VALUE) ||
+      type == T(JSDate, JS_DATE) ||
+      type == T(JSArray, JS_ARRAY) ||
+      type == T(JSArrayBuffer, JS_ARRAY_BUFFER) ||
+      type == T(JSTypedArray, JS_TYPED_ARRAY) ||
+      type == T(JSDataView, JS_DATA_VIEW) ||
+      type == T(JSRegExp, JS_REGEXP) ||
+      type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
+      type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
+      type == T(JSMessageObject, JS_MESSAGE_OBJECT)) {
+    /* General object */
+    char* start;
+    char* end;
+    int size;
+
+    err = cd_v8_get_obj_size(state, map, type, &size);
+    if (!cd_is_ok(err))
+      return err;
+
+    CORE_PTR(obj + cd_v8_class_JSObject__properties__FixedArray, start);
+    CORE_PTR(obj +
+                cd_v8_class_JSObject__properties__FixedArray +
+                size,
+             end);
+
+    err = cd_queue_space(state, start, end);
+  } else {
+  }
+  err = cd_ok();
+
+  if (!cd_is_ok(err))
+    return err;
+
   return cd_ok();
 }
+
+
+cd_error_t cd_v8_get_obj_size(cd_state_t* state,
+                              void* map,
+                              int type,
+                              int* size) {
+  int instance_size;
+  uint8_t* ptr;
+
+  CORE_PTR(map + cd_v8_class_Map__instance_size__int, ptr);
+  instance_size = *ptr;
+
+  /* Constant size */
+  if (instance_size != 0) {
+    *size = instance_size * (cd_obj_is_x64(state->core) ? 8 : 4);
+    return cd_ok();
+  }
+
+  /* Variable-size */
+
+  *size = 0;
+  return cd_ok();
+}
+
+
+cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
+  size_t delta;
+
+  delta = cd_obj_is_x64(state->core) ? 8 : 4;
+  for (; start < end; start += delta) {
+    void* ptr;
+
+    ptr = *(void**) start;
+    if (!V8_IS_HEAPOBJECT(ptr))
+      return cd_error(kCDErrNotObject);
+    ptr = V8_OBJ(ptr);
+
+    if (cd_list_push(&state->queue, ptr) != 0)
+      return cd_error_str(kCDErrNoMem, "cd_list_push queue space");
+  }
+
+  return cd_ok();
+}
+
+
+#undef T
 
 
 cd_error_t cd_print_obj(cd_state_t* state, void* obj) {

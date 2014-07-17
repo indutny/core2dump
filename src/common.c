@@ -132,8 +132,8 @@ void* cd_list_shift(cd_list_t* list) {
     return NULL;
 
   r = list->items[0];
-  memmove(list->items, list->items + 1, list->size * sizeof(*list->items));
   list->off--;
+  memmove(list->items, list->items + 1, list->off * sizeof(*list->items));
 
   return r;
 }
