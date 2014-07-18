@@ -15,7 +15,7 @@ struct cd_hashmap_item_s {
 
 struct cd_hashmap_s {
   unsigned int count;
-  cd_hashmap_item_t items[1];
+  cd_hashmap_item_t* items;
 };
 
 struct cd_list_s {
@@ -27,13 +27,13 @@ struct cd_list_s {
 
 uint32_t cd_jenkins(const char* str, unsigned int len);
 
-cd_hashmap_t* cd_hashmap_new(unsigned int count);
-void cd_hashmap_free(cd_hashmap_t* map);
+int cd_hashmap_init(cd_hashmap_t* map, unsigned int count);
+void cd_hashmap_destroy(cd_hashmap_t* map);
 
-void cd_hashmap_insert(cd_hashmap_t* map,
-                       const char* key,
-                       unsigned int key_len,
-                       void* value);
+int cd_hashmap_insert(cd_hashmap_t* map,
+                      const char* key,
+                      unsigned int key_len,
+                      void* value);
 void* cd_hashmap_get(cd_hashmap_t* map,
                      const char* key,
                      unsigned int key_len);

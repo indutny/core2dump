@@ -19,7 +19,8 @@ struct cd_obj_s {
   size_t size;
   int is_x64;
   struct mach_header* header;
-  cd_hashmap_t* syms;
+  cd_hashmap_t syms;
+  int has_syms;
 };
 
 
@@ -39,6 +40,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
     goto failed_fstat;
   }
   obj->size = sbuf.st_size;
+  obj->has_syms = 0;
 
   if (obj->size < sizeof(*obj->header)) {
     *err = cd_error(kCDErrNotEnoughMagic);
@@ -93,9 +95,9 @@ void cd_obj_free(cd_obj_t* obj) {
   munmap(obj->addr, obj->size);
   obj->addr = NULL;
 
-  if (obj->syms != NULL)
-    cd_hashmap_free(obj->syms);
-  obj->syms = NULL;
+  if (obj->has_syms)
+    cd_hashmap_destroy(&obj->syms);
+  obj->has_syms = 0;
 
   free(obj);
 }
@@ -196,7 +198,7 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
   cd_error_t err;
   void* res;
 
-  if (obj->syms != NULL)
+  if (obj->has_syms)
     goto lookup;
 
   CD_ITERATE_LCMDS({
@@ -216,11 +218,11 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       goto fatal;
     }
 
-    obj->syms = cd_hashmap_new(symtab->nsyms * 4);
-    if (obj->syms == NULL) {
+    if (cd_hashmap_init(&obj->syms, symtab->nsyms * 4) != 0) {
       err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
       goto fatal;
     }
+    obj->has_syms = 1;
 
     if (obj->is_x64)
       nl64 = (struct nlist_64*) ((char*) obj->addr + symtab->symoff);
@@ -255,19 +257,22 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       if (len == 0)
         continue;
 
-      cd_hashmap_insert(obj->syms, name, len, (void*) value);
+      if (cd_hashmap_insert(&obj->syms, name, len, (void*) value) != 0) {
+        err = cd_error_str(kCDErrNoMem, "cd_hashmap_insert");
+        goto fatal;
+      }
     }
 
     break;
   })
-  if (obj->syms == NULL) {
+  if (!obj->has_syms) {
     err = cd_error(kCDErrNotFound);
     goto fatal;
   }
 
 lookup:
   assert(sizeof(void*) == sizeof(*addr));
-  res = cd_hashmap_get(obj->syms, sym, strlen(sym));
+  res = cd_hashmap_get(&obj->syms, sym, strlen(sym));
   if (res == NULL) {
     err = cd_error(kCDErrNotFound);
   } else {

@@ -22,6 +22,12 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
     return cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
   }
 
+  if (cd_hashmap_init(&state->strings, 128) != 0) {
+    cd_list_free(&state->queue);
+    cd_list_free(&state->nodes);
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_t strings");
+  }
+
   return cd_ok();
 }
 
@@ -29,6 +35,9 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 void cd_visitor_destroy(cd_state_t* state) {
   cd_list_free(&state->queue);
   cd_list_free(&state->nodes);
+
+  /* XXX Free strings */
+  cd_hashmap_destroy(&state->strings);
 }
 
 
@@ -161,14 +170,27 @@ cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
 }
 
 
-#undef T
-
-
 cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
   cd_node_t node;
 
   node.obj = obj;
-  node.type = type;
+
+  /* Mimique V8HeapExplorer::AddEntry */
+  if (type == T(JSFunction, JS_FUNCTION)) {
+    void** ptr;
+    void* sh;
+    void* name;
+    node.type = kCDNodeClosure;
+
+    /* Load shared function info to lookup name */
+    V8_CORE_PTR(obj, cd_v8_class_JSFunction__shared__SharedFunctionInfo, ptr);
+    sh = *ptr;
+
+    V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
+    name = *ptr;
+  } else {
+    node.type = kCDNodeHidden;
+  }
 
   /* Push node */
   if (cd_list_push(&state->nodes, &node) != 0)
@@ -176,3 +198,6 @@ cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
 
   return cd_ok();
 }
+
+
+#undef T

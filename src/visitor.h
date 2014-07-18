@@ -7,10 +7,22 @@
 
 typedef struct cd_node_s cd_node_t;
 typedef struct cd_edge_s cd_edge_t;
+typedef enum cd_node_type_e cd_node_type_t;
+
+enum cd_node_type_e {
+  kCDNodeHidden,
+  kCDNodeArray,
+  kCDNodeString,
+  kCDNodeObject,
+  kCDNodeCode,
+  kCDNodeClosure,
+  kCDNodeRegExp,
+  kCDNodeNumber
+};
 
 struct cd_node_s {
   void* obj;
-  int type;
+  cd_node_type_t type;
 
   cd_list_t edges;
 };

@@ -5,6 +5,8 @@
 #include "common.h"
 
 
+static const int kCDHashmapMaxSkip = 24;
+static const int kCDHashmapGrowRate = 512;
 static const int kCDListGrowRate = 256;
 
 
@@ -30,40 +32,82 @@ uint32_t cd_jenkins(const char* str, unsigned int len) {
 }
 
 
-cd_hashmap_t* cd_hashmap_new(unsigned int count) {
-  unsigned int i;
-  cd_hashmap_t* res;
+int cd_hashmap_init(cd_hashmap_t* map, unsigned int count) {
+  map->items = calloc(sizeof(*map->items), count);
+  if (map->items == NULL)
+    return -1;
 
-  res = malloc(sizeof(*res) + (count - 1) * sizeof(*res->items));
-  if (res == NULL)
-    return NULL;
+  map->count = count;
 
-  res->count = count;
-  for (i = 0; i < count; i++)
-    res->items[i].key = NULL;
-
-  return res;
+  return 0;
 }
 
 
-void cd_hashmap_free(cd_hashmap_t* map) {
-  free(map);
+void cd_hashmap_destroy(cd_hashmap_t* map) {
+  free(map->items);
+  map->items = NULL;
 }
 
 
-void cd_hashmap_insert(cd_hashmap_t* map,
-                       const char* key,
-                       unsigned int key_len,
-                       void* value) {
+int cd_hashmap_insert(cd_hashmap_t* map,
+                      const char* key,
+                      unsigned int key_len,
+                      void* value) {
   uint32_t index;
 
-  index = cd_jenkins(key, key_len) % map->count;
-  while (map->items[index].key != NULL)
-    index = (index + 1) % map->count;
+  do {
+    int skip;
+
+    index = cd_jenkins(key, key_len) % map->count;
+    for (skip = 0;
+         skip < kCDHashmapMaxSkip && map->items[index].key != NULL;
+         skip++) {
+      /* Equal entries */
+      if (map->items[index].key_len == key_len &&
+          strncmp(map->items[index].key, key, key_len) == 0) {
+        return 0;
+      }
+      index = (index + 1) % map->count;
+    }
+
+    if (skip != kCDHashmapMaxSkip)
+      break;
+
+    /* Grow is needed */
+    cd_hashmap_item_t* items;
+    cd_hashmap_item_t* nitems;
+    unsigned int i;
+    unsigned int count;
+
+    nitems = calloc(sizeof(*nitems), map->count + kCDHashmapGrowRate);
+    if (nitems == NULL)
+      return -1;
+
+    /* Rehash */
+    items = map->items;
+    count = map->count;
+
+    map->count += kCDHashmapGrowRate;
+    map->items = nitems;
+    for (i = 0; i < count; i++) {
+      if (items[i].key == NULL)
+        continue;
+      cd_hashmap_insert(map,
+                        items[i].key,
+                        items[i].key_len,
+                        items[i].value);
+    }
+    free(items);
+
+    /* Retry inserting */
+    continue;
+  } while (1);
 
   map->items[index].key = key;
   map->items[index].key_len = key_len;
   map->items[index].value = value;
+
+  return 0;
 }
 
 
