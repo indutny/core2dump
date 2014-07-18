@@ -19,6 +19,7 @@ static cd_error_t run(const char* input,
                       const char* output);
 static cd_error_t cd_obj2json(int input, int binary, int output);
 static cd_error_t cd_print_dump(cd_state_t* state);
+static void cd_print_nodes(cd_state_t* state);
 
 
 void cd_print_version() {
@@ -250,20 +251,50 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "    \"node_count\": %d,\n"
       "    \"edge_count\": %d,\n"
       "    \"trace_function_count\": %d\n"
-      "  },\n"
-      "  \"nodes\": [],\n"
-      "  \"edges\": [],\n"
-      "  \"trace_function_infos\": [],\n"
-      "  \"trace_tree\": [],\n",
+      "  },\n",
       42,
       cd_list_len(&state->nodes),
       0,
       0);
 
+  /* Print all accumulated node */
+  dprintf(state->output, "  \"nodes\": [ ");
+  cd_print_nodes(state);
+  dprintf(state->output, " ],\n");
+
+  dprintf(state->output,
+          "  \"edges\": [],\n"
+          "  \"trace_function_infos\": [],\n"
+          "  \"trace_tree\": [],\n");
+
   /* Print all accumulated strings */
   dprintf(state->output, "  \"strings\": [ ");
   cd_strings_print(&state->strings, state->output);
-  dprintf(state->output, " ]\n}");
+  dprintf(state->output, " ]\n");
+  dprintf(state->output, "}\n");
 
   return cd_ok();
+}
+
+
+void cd_print_nodes(cd_state_t* state) {
+  unsigned int i;
+  unsigned int len;
+
+  len = cd_list_len(&state->nodes);
+  for (i = 0; i < len; i++) {
+    cd_node_t node;
+
+    cd_list_get(&state->nodes, i, &node);
+    dprintf(state->output,
+            "%d, %d, %d, %d, %d, %d",
+            node.type,
+            node.name,
+            node.id,
+            node.size,
+            cd_list_len(&node.edges),
+            node.id);
+    if (i != len - 1)
+      dprintf(state->output, ",\n");
+  }
 }

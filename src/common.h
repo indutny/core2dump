@@ -2,6 +2,7 @@
 #define SRC_COMMON_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef struct cd_hashmap_s cd_hashmap_t;
 typedef struct cd_hashmap_item_s cd_hashmap_item_t;
@@ -46,5 +47,10 @@ int cd_list_shift(cd_list_t* list, void* res);
 int cd_list_pop(cd_list_t* list, void* res);
 int cd_list_get(cd_list_t* list, unsigned int index, void* res);
 unsigned int cd_list_len(cd_list_t* list);
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+
+#define container_of(ptr, type, member) \
+    ((type *) ((char *) (ptr) - offsetof(type, member)))
 
 #endif  /* SRC_COMMON_H */

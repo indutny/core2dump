@@ -29,7 +29,10 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
 }
 
 
-cd_error_t cd_v8_to_cstr(cd_state_t* state, void* str, const char** res) {
+cd_error_t cd_v8_to_cstr(cd_state_t* state,
+                         void* str,
+                         const char** res,
+                         int* index) {
   void** ptr;
   void* map;
   int type;
@@ -69,5 +72,5 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state, void* str, const char** res) {
   if (data == NULL)
     return cd_error(kCDErrNotFound);
 
-  return cd_strings_copy(&state->strings, res, data, length);
+  return cd_strings_copy(&state->strings, res, index, data, length);
 }

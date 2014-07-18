@@ -10,7 +10,10 @@
 static cd_error_t cd_visit_root(cd_state_t* state, void* obj);
 static cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr);
 static cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end);
-static cd_error_t cd_add_node(cd_state_t* state, void* obj, int type);
+static cd_error_t cd_add_node(cd_state_t* state,
+                              void* obj,
+                              void* map,
+                              int type);
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
@@ -38,6 +41,13 @@ failed_queue_init:
 
 void cd_visitor_destroy(cd_state_t* state) {
   cd_list_free(&state->queue);
+
+  while (cd_list_len(&state->nodes) != 0) {
+    cd_node_t node;
+
+    cd_list_pop(&state->nodes, &node);
+    cd_list_free(&node.edges);
+  }
   cd_list_free(&state->nodes);
 }
 
@@ -85,7 +95,7 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
   type = *ptype;
 
-  err = cd_add_node(state, obj, type);
+  err = cd_add_node(state, obj, map, type);
   if (!cd_is_ok(err))
     return err;
 
@@ -171,9 +181,10 @@ cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
 }
 
 
-cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
+cd_error_t cd_add_node(cd_state_t* state, void* obj, void* map, int type) {
   cd_error_t err;
   cd_node_t node;
+  const char* cname;
 
   node.obj = obj;
 
@@ -182,8 +193,6 @@ cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
     void** ptr;
     void* sh;
     void* name;
-    const char* cname;
-    node.type = kCDNodeClosure;
 
     /* Load shared function info to lookup name */
     V8_CORE_PTR(obj, cd_v8_class_JSFunction__shared__SharedFunctionInfo, ptr);
@@ -192,16 +201,33 @@ cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
     V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
     name = *ptr;
 
-    err = cd_v8_to_cstr(state, name, &cname);
+    err = cd_v8_to_cstr(state, name, &cname, &node.name);
     if (!cd_is_ok(err))
       return err;
+
+    node.type = kCDNodeClosure;
   } else {
     node.type = kCDNodeHidden;
+
+    err = cd_strings_copy(&state->strings, &cname, &node.name, "", 0);
+    if (!cd_is_ok(err))
+      return err;
   }
 
+  err = cd_v8_get_obj_size(state, map, type, &node.size);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (cd_list_init(&node.edges, 16, sizeof(cd_edge_t)) != 0)
+    return cd_error_str(kCDErrNoMem, "node.edges");
+
+  node.id = cd_list_len(&state->nodes);
+
   /* Push node */
-  if (cd_list_push(&state->nodes, &node) != 0)
+  if (cd_list_push(&state->nodes, &node) != 0) {
+    cd_list_free(&node.edges);
     return cd_error_str(kCDErrNoMem, "cd_list_push nodes");
+  }
 
   return cd_ok();
 }

@@ -23,6 +23,9 @@ enum cd_node_type_e {
 struct cd_node_s {
   void* obj;
   cd_node_type_t type;
+  int id;
+  int name;
+  int size;
 
   cd_list_t edges;
 };

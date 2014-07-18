@@ -35,6 +35,9 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               void* map,
                               int type,
                               int* size);
-cd_error_t cd_v8_to_cstr(cd_state_t* state, void* str, const char** res);
+cd_error_t cd_v8_to_cstr(cd_state_t* state,
+                         void* str,
+                         const char** res,
+                         int* index);
 
 #endif  /* SRC_V8_HELPERS_H_ */
