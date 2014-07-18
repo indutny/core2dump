@@ -57,7 +57,7 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
     return cd_error_str(kCDErrNoMem, "strdup failure");
   memcpy(item->str, str, len);
 
-  r = cd_hashmap_insert(&strings->map, *res, len, item);
+  r = cd_hashmap_insert(&strings->map, str, len, item);
   if (r != 0) {
     free(item);
     return cd_error_str(kCDErrNoMem, "hashmap insert strings.map failure");

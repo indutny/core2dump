@@ -7,7 +7,6 @@
 
 static const int kCDHashmapMaxSkip = 24;
 static const int kCDHashmapGrowRate = 512;
-static const int kCDListGrowRate = 256;
 
 
 uint32_t cd_jenkins(const char* str, unsigned int len) {
@@ -130,91 +129,4 @@ void* cd_hashmap_get(cd_hashmap_t* map,
     /* Move forward */
     index = (index + 1) % map->count;
   } while (1);
-}
-
-
-int cd_list_init(cd_list_t* list, unsigned int size, unsigned int item_size) {
-  list->items = malloc(sizeof(*list->items) * size * item_size);
-  list->size = size;
-  list->off = 0;
-  list->item_size = item_size;
-
-  return list->items == NULL ? -1 : 0;
-}
-
-
-void cd_list_free(cd_list_t* list) {
-  free(list->items);
-  list->items = NULL;
-}
-
-
-int cd_list_push(cd_list_t* list, void* value) {
-  /* Realloc */
-  if (list->off == list->size) {
-    char* items;
-
-    items = malloc(
-          sizeof(*items) * (list->size + kCDListGrowRate) * list->item_size);
-    if (items == NULL)
-      return -1;
-
-    memcpy(items, list->items, sizeof(*items) * list->size * list->item_size);
-    free(list->items);
-    list->items = items;
-  }
-
-  /* Push item on list */
-  memcpy(list->items + list->off++ * list->item_size,
-         value,
-         list->item_size);
-
-  return 0;
-}
-
-
-int cd_list_shift(cd_list_t* list, void* res) {
-  if (list->off == 0) {
-    memset(res, 0, list->item_size);
-    return -1;
-  }
-
-  /* Copy-out the result */
-  memcpy(res, list->items, list->item_size);
-
-  list->off--;
-  memmove(list->items,
-          list->items + list->item_size,
-          list->off * sizeof(*list->items) * list->item_size);
-
-  return 0;
-}
-
-
-int cd_list_pop(cd_list_t* list, void* res) {
-  if (list->off == 0) {
-    memset(res, 0, list->item_size);
-    return -1;
-  }
-
-  /* Copy-out the result */
-  memcpy(res, list->items + (--list->off) * list->item_size, list->item_size);
-
-  return 0;
-}
-
-
-int cd_list_get(cd_list_t* list, unsigned int index, void* res) {
-  if (index >= list->off)
-    return -1;
-
-  /* Copy-out the result */
-  memcpy(res, list->items + index * list->item_size, list->item_size);
-
-  return 0;
-}
-
-
-unsigned int cd_list_len(cd_list_t* list) {
-  return list->off;
 }

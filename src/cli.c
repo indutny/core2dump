@@ -260,7 +260,7 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "    \"trace_function_count\": %d\n"
       "  },\n",
       42,
-      cd_list_len(&state->nodes),
+      state->node_count,
       0,
       0);
 
@@ -285,23 +285,23 @@ cd_error_t cd_print_dump(cd_state_t* state) {
 
 
 void cd_print_nodes(cd_state_t* state) {
-  unsigned int i;
-  unsigned int len;
+  QUEUE* q;
 
-  len = cd_list_len(&state->nodes);
-  for (i = 0; i < len; i++) {
-    cd_node_t node;
+  QUEUE_FOREACH(q, &state->nodes) {
+    cd_node_t* node;
 
-    cd_list_get(&state->nodes, i, &node);
+    node = container_of(q, cd_node_t, member);
+
     dprintf(state->output,
             "%d, %d, %d, %d, %d, %d",
-            node.type,
-            node.name,
-            node.id,
-            node.size,
-            cd_list_len(&node.edges),
-            node.id);
-    if (i != len - 1)
-      dprintf(state->output, ",\n");
+            node->type,
+            node->name,
+            node->id,
+            node->size,
+            1,  /* XXX Edges */
+            node->id);
+
+    if (q != QUEUE_PREV(&state->nodes))
+      dprintf(state->output, ", ");
   }
 }

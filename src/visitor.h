@@ -27,7 +27,7 @@ struct cd_node_s {
   int name;
   int size;
 
-  cd_list_t edges;
+  QUEUE member;
 };
 
 struct cd_edge_s {

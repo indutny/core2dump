@@ -6,6 +6,7 @@
 #include "v8constants.h"
 #include "v8helpers.h"
 
+#include <stdlib.h>
 #include <sys/types.h>
 
 

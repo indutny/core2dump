@@ -15,7 +15,8 @@ struct cd_state_s {
   int ptr_size;
 
   QUEUE queue;
-  cd_list_t nodes;
+  QUEUE nodes;
+  int node_count;
 
   cd_strings_t strings;
 
