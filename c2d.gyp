@@ -3,10 +3,13 @@
     "target_name": "core2dump",
     "type": "executable",
     "sources": [
-      "src/core.c",
-      "src/error.c",
       "src/common.c",
+      "src/collector.c",
+      "src/cli.c",
+      "src/error.c",
       "src/v8constants.c",
+      "src/v8helpers.c",
+      "src/visitor.c",
     ],
     "conditions": [
       # Mach-O
