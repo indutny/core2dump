@@ -11,6 +11,8 @@
 #include "v8constants.h"
 
 typedef struct cd_state_s cd_state_t;
+typedef struct cd_node_s cd_node_t;
+typedef struct cd_edge_s cd_edge_t;
 
 struct cd_state_s {
   cd_obj_t* core;
@@ -21,7 +23,20 @@ struct cd_state_s {
 
   cd_list_t queue;
   cd_list_t nodes;
+  cd_list_t edges;
   intptr_t zap_bit;
+};
+
+struct cd_node_s {
+  void* obj;
+  int type;
+};
+
+struct cd_edge_s {
+  void* from;
+  void* to;
+  int type;
+  int index;
 };
 
 static cd_error_t run(const char* input,
@@ -196,10 +211,10 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto failed_v8_init;
 
-  if (cd_list_init(&state.queue, 32) != 0)
+  if (cd_list_init(&state.queue, 32, sizeof(void*)) != 0)
     goto failed_v8_init;
 
-  if (cd_list_init(&state.nodes, 32) != 0)
+  if (cd_list_init(&state.nodes, 32, sizeof(cd_node_t)) != 0)
     goto failed_nodes_init;
 
   err = cd_obj_get_thread(state.core, 0, &state.thread);
@@ -281,9 +296,9 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "  \"strings\": []\n"
       "}\n",
       42,
-      1,
-      2,
-      3);
+      cd_list_len(&state->nodes),
+      0,
+      0);
 
   return cd_ok();
 }
@@ -356,7 +371,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   /* Just to verify that the object has live map */
   CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
 
-  if (cd_list_push(&state->queue, obj) != 0)
+  if (cd_list_push(&state->queue, &obj) != 0)
     return cd_error_str(kCDErrNoMem, "cd_list_push queue");
 
   return cd_ok();
@@ -364,8 +379,14 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
 
 
 cd_error_t cd_visit_roots(cd_state_t* state) {
-  while (cd_list_len(&state->queue) != 0)
-    cd_visit_root(state, cd_list_shift(&state->queue));
+  while (cd_list_len(&state->queue) != 0) {
+    void* ptr;
+
+    if (cd_list_shift(&state->queue, &ptr) != 0)
+      return cd_error(kCDErrListShift);
+
+    cd_visit_root(state, ptr);
+  }
 
   return cd_ok();
 }
@@ -382,6 +403,7 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
   uint8_t* ptype;
   int type;
   cd_error_t err;
+  cd_node_t node;
 
   CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
 
@@ -403,8 +425,11 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
   CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
   type = *ptype;
 
+  node.obj = obj;
+  node.type = type;
+
   /* Push node */
-  if (cd_list_push(&state->nodes, obj) != 0)
+  if (cd_list_push(&state->nodes, &node) != 0)
     return cd_error_str(kCDErrNoMem, "cd_list_push nodes");
 
   /* Mimique the v8's behaviour, see HeapObject::IterateBody */
@@ -490,7 +515,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr) {
     return cd_error(kCDErrNotObject);
   ptr = V8_OBJ(ptr);
 
-  if (cd_list_push(&state->queue, ptr) != 0)
+  if (cd_list_push(&state->queue, &ptr) != 0)
     return cd_error_str(kCDErrNoMem, "cd_list_push queue space");
 
   return cd_ok();

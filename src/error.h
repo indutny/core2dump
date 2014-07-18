@@ -22,7 +22,8 @@ enum cd_error_code_e {
   kCDErrThreadStateOOB = 0xe,
   kCDErrThreadStateInvalidSize = 0xf,
   kCDErrNotObject = 0x10,
-  kCDErrUnknownObjectType = 0x11
+  kCDErrUnknownObjectType = 0x11,
+  kCDErrListShift = 0x12
 };
 
 struct cd_error_s {

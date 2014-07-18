@@ -21,7 +21,8 @@ struct cd_hashmap_s {
 struct cd_list_s {
   unsigned int off;
   unsigned int size;
-  void** items;
+  char* items;
+  unsigned int item_size;
 };
 
 uint32_t cd_jenkins(const char* str, unsigned int len);
@@ -37,11 +38,11 @@ void* cd_hashmap_get(cd_hashmap_t* map,
                      const char* key,
                      unsigned int key_len);
 
-int cd_list_init(cd_list_t* list, unsigned int size);
+int cd_list_init(cd_list_t* list, unsigned int size, unsigned int item_size);
 void cd_list_free(cd_list_t* list);
 
 int cd_list_push(cd_list_t* list, void* value);
-void* cd_list_shift(cd_list_t* list);
+int cd_list_shift(cd_list_t* list, void* res);
 unsigned int cd_list_len(cd_list_t* list);
 
 #endif  /* SRC_COMMON_H */

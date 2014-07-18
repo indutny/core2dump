@@ -89,10 +89,11 @@ void* cd_hashmap_get(cd_hashmap_t* map,
 }
 
 
-int cd_list_init(cd_list_t* list, unsigned int size) {
-  list->items = malloc(sizeof(*list->items) * size);
+int cd_list_init(cd_list_t* list, unsigned int size, unsigned int item_size) {
+  list->items = malloc(sizeof(*list->items) * size * item_size);
   list->size = size;
   list->off = 0;
+  list->item_size = item_size;
 
   return list->items == NULL ? -1 : 0;
 }
@@ -107,35 +108,42 @@ void cd_list_free(cd_list_t* list) {
 int cd_list_push(cd_list_t* list, void* value) {
   /* Realloc */
   if (list->off == list->size) {
-    void** items;
+    char* items;
 
-    items = malloc(sizeof(*items) * (list->size + kCDListGrowRate));
+    items = malloc(
+          sizeof(*items) * (list->size + kCDListGrowRate) * list->item_size);
     if (items == NULL)
       return -1;
 
-    memcpy(items, list->items, sizeof(*items) * list->size);
+    memcpy(items, list->items, sizeof(*items) * list->size * list->item_size);
     free(list->items);
     list->items = items;
   }
 
   /* Push item on list */
-  list->items[list->off++] = value;
+  memcpy(list->items + list->off++ * list->item_size,
+         value,
+         list->item_size);
 
   return 0;
 }
 
 
-void* cd_list_shift(cd_list_t* list) {
-  void* r;
+int cd_list_shift(cd_list_t* list, void* res) {
+  if (list->off == 0) {
+    memset(res, 0, list->item_size);
+    return -1;
+  }
 
-  if (list->off == 0)
-    return NULL;
+  /* Copy-out the result */
+  memcpy(res, list->items, list->item_size);
 
-  r = list->items[0];
   list->off--;
-  memmove(list->items, list->items + 1, list->off * sizeof(*list->items));
+  memmove(list->items,
+          list->items + list->item_size,
+          list->off * sizeof(*list->items) * list->item_size);
 
-  return r;
+  return 0;
 }
 
 
