@@ -60,7 +60,7 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   r = cd_hashmap_insert(&strings->map, *res, len, item);
   if (r != 0) {
     free(item);
-    return cd_error_str(kCDErrNoMem, "cd_list_push strings.list failure");
+    return cd_error_str(kCDErrNoMem, "hashmap insert strings.map failure");
   }
 
   item->str[len] = '\0';
