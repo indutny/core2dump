@@ -180,9 +180,13 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto failed_v8_init;
 
-  err = cd_visitor_init(&state);
+  err = cd_collector_init(&state);
   if (!cd_is_ok(err))
     goto failed_v8_init;
+
+  err = cd_visitor_init(&state);
+  if (!cd_is_ok(err))
+    goto failed_visitor_init;
 
   err = cd_collect_roots(&state);
   if (!cd_is_ok(err))
@@ -198,6 +202,9 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
 
 failed_collect_roots:
   cd_visitor_destroy(&state);
+
+failed_visitor_init:
+  cd_collector_destroy(&state);
 
 failed_v8_init:
   cd_strings_destroy(&state.strings);

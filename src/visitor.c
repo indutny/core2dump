@@ -1,6 +1,8 @@
 #include "visitor.h"
+#include "collector.h"
 #include "common.h"
 #include "error.h"
+#include "queue.h"
 #include "state.h"
 #include "v8helpers.h"
 #include "v8constants.h"
@@ -17,31 +19,14 @@ static cd_error_t cd_add_node(cd_state_t* state,
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
-  cd_error_t err;
-
-  if (cd_list_init(&state->queue, 32, sizeof(void*)) != 0) {
-    err = cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
-    goto failed_queue_init;
-  }
-
-  if (cd_list_init(&state->nodes, 32, sizeof(cd_node_t)) != 0) {
-    err = cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
-    goto failed_nodes_init;
-  }
+  if (cd_list_init(&state->nodes, 32, sizeof(cd_node_t)) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_list_t state->nodes");
 
   return cd_ok();
-
-failed_nodes_init:
-  cd_list_free(&state->queue);
-
-failed_queue_init:
-  return err;
 }
 
 
 void cd_visitor_destroy(cd_state_t* state) {
-  cd_list_free(&state->queue);
-
   while (cd_list_len(&state->nodes) != 0) {
     cd_node_t node;
 
@@ -53,13 +38,16 @@ void cd_visitor_destroy(cd_state_t* state) {
 
 
 cd_error_t cd_visit_roots(cd_state_t* state) {
-  while (cd_list_len(&state->queue) != 0) {
-    void* ptr;
+  while (!QUEUE_EMPTY(&state->queue) != 0) {
+    QUEUE* q;
+    cd_collect_item_t* item;
 
-    if (cd_list_shift(&state->queue, &ptr) != 0)
-      return cd_error(kCDErrListShift);
+    q = QUEUE_HEAD(&state->queue);
+    QUEUE_REMOVE(q);
+    item = container_of(q, cd_collect_item_t, member);
 
-    cd_visit_root(state, ptr);
+    cd_visit_root(state, item->obj);
+    free(item);
   }
 
   return cd_ok();
@@ -155,11 +143,17 @@ cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
 
 
 cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr) {
+  cd_collect_item_t* item;
+
   if (!V8_IS_HEAPOBJECT(ptr))
     return cd_error(kCDErrNotObject);
 
-  if (cd_list_push(&state->queue, &ptr) != 0)
+  item = malloc(sizeof(*item));
+  if (item == NULL)
     return cd_error_str(kCDErrNoMem, "cd_list_push queue space");
+
+  item->obj = ptr;
+  QUEUE_INSERT_TAIL(&state->queue, &item->member);
 
   return cd_ok();
 }

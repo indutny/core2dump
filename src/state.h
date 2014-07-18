@@ -4,6 +4,7 @@
 #include "obj.h"
 #include "common.h"
 #include "strings.h"
+#include "queue.h"
 
 typedef struct cd_state_s cd_state_t;
 
@@ -13,7 +14,7 @@ struct cd_state_s {
   int output;
   int ptr_size;
 
-  cd_list_t queue;
+  QUEUE queue;
   cd_list_t nodes;
 
   cd_strings_t strings;
