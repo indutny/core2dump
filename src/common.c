@@ -191,6 +191,19 @@ int cd_list_shift(cd_list_t* list, void* res) {
 }
 
 
+int cd_list_pop(cd_list_t* list, void* res) {
+  if (list->off == 0) {
+    memset(res, 0, list->item_size);
+    return -1;
+  }
+
+  /* Copy-out the result */
+  memcpy(res, &list->items[list->off--], list->item_size);
+
+  return 0;
+}
+
+
 unsigned int cd_list_len(cd_list_t* list) {
   return list->off;
 }

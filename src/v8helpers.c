@@ -3,6 +3,8 @@
 #include "state.h"
 #include "v8constants.h"
 
+#include <stdlib.h>
+#include <stdio.h>
 
 cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               void* map,
@@ -23,5 +25,47 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
   /* Variable-size */
 
   *size = 0;
+  return cd_ok();
+}
+
+
+cd_error_t cd_v8_to_cstr(cd_state_t* state, void* str, const char** res) {
+  void** ptr;
+  void* map;
+  int type;
+  int encoding;
+  int repr;
+
+  /* Determine string's type */
+  V8_CORE_PTR(str, cd_v8_class_HeapObject__map__Map, ptr);
+
+  /* Ignore zap bit */
+  map = (void*) ((intptr_t) *ptr & (~state->zap_bit));
+
+  V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptr);
+  type = *(uint8_t*) ptr;
+
+  if (type > cd_v8_FirstNonstringType)
+    return cd_error(kCDErrNotString);
+
+  /* kOneByteStringTag or kTwoByteStringTag */
+  encoding = type & cd_v8_StringEncodingMask;
+  /* kSeqStringTag, kExternalStringTag, kSlicedStringTag, kConsStringTag */
+  repr = type & cd_v8_StringRepresentationMask;
+
+  if (encoding == cd_v8_AsciiStringTag && repr == cd_v8_SeqStringTag) {
+    int length;
+    char* data;
+
+    V8_CORE_PTR(str, cd_v8_class_String__length__SMI, ptr);
+    length = V8_SMI(*ptr);
+
+    V8_CORE_PTR(str, cd_v8_class_SeqOneByteString__chars__char, ptr);
+    data = (char*) ptr;
+    fprintf(stdout, "%.*s\n", length, data);
+  } else {
+    *res = NULL;
+  }
+
   return cd_ok();
 }

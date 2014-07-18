@@ -7,11 +7,11 @@
 /* Check object tag */
 
 #define V8_IS_HEAPOBJECT(ptr)                                                 \
-    ((((intptr_t) ptr) & cd_v8_HeapObjectTagMask) == cd_v8_HeapObjectTag)
+    ((((intptr_t) (ptr)) & cd_v8_HeapObjectTagMask) == cd_v8_HeapObjectTag)
 
 /* Untag object */
 
-#define V8_OBJ(ptr) ((void*) ((char*) ptr - cd_v8_HeapObjectTag))
+#define V8_OBJ(ptr) ((void*) ((char*) (ptr) - cd_v8_HeapObjectTag))
 
 /* Pointer lookup in a core file */
 
@@ -26,9 +26,15 @@
         return err;                                                           \
     } while (0);                                                              \
 
+/* Untag SMI */
+#define V8_SMI(ptr)                                                           \
+    ((uint32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                    \
+                                      cd_v8_SmiTagMask)))                     \
+
 cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               void* map,
                               int type,
                               int* size);
+cd_error_t cd_v8_to_cstr(cd_state_t* state, void* str, const char** res);
 
 #endif  /* SRC_V8_HELPERS_H_ */

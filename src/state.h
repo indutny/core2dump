@@ -15,7 +15,10 @@ struct cd_state_s {
   cd_list_t queue;
   cd_list_t nodes;
 
-  cd_hashmap_t strings;
+  struct {
+    cd_list_t list;
+    cd_hashmap_t map;
+  } strings;
 
   intptr_t zap_bit;
 };

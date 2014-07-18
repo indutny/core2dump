@@ -14,30 +14,55 @@ static cd_error_t cd_add_node(cd_state_t* state, void* obj, int type);
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
-  if (cd_list_init(&state->queue, 32, sizeof(void*)) != 0)
-    return cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
+  cd_error_t err;
 
-  if (cd_list_init(&state->nodes, 32, sizeof(cd_node_t)) != 0) {
-    cd_list_free(&state->queue);
-    return cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
+  if (cd_list_init(&state->queue, 32, sizeof(void*)) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
+    goto failed_queue_init;
   }
 
-  if (cd_hashmap_init(&state->strings, 128) != 0) {
-    cd_list_free(&state->queue);
-    cd_list_free(&state->nodes);
-    return cd_error_str(kCDErrNoMem, "cd_hashmap_t strings");
+  if (cd_list_init(&state->nodes, 32, sizeof(cd_node_t)) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_list_t state->queue");
+    goto failed_nodes_init;
+  }
+
+  if (cd_list_init(&state->strings.list, 128, sizeof(void*)) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_list_t strings");
+    goto failed_strings_list_init;
+  }
+
+  if (cd_hashmap_init(&state->strings.map, 128) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_hashmap_t strings");
+    goto failed_strings_map_init;
   }
 
   return cd_ok();
+
+failed_strings_map_init:
+  cd_hashmap_destroy(&state->strings.map);
+
+failed_strings_list_init:
+  cd_list_free(&state->nodes);
+
+failed_nodes_init:
+  cd_list_free(&state->queue);
+
+failed_queue_init:
+  return err;
 }
 
 
 void cd_visitor_destroy(cd_state_t* state) {
   cd_list_free(&state->queue);
   cd_list_free(&state->nodes);
+  while (cd_list_len(&state->strings.list) != 0) {
+    void* ptr;
 
-  /* XXX Free strings */
-  cd_hashmap_destroy(&state->strings);
+    cd_list_pop(&state->strings.list, &ptr);
+    free(ptr);
+  }
+  cd_list_free(&state->strings.list);
+  cd_hashmap_destroy(&state->strings.map);
 }
 
 
@@ -55,7 +80,7 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
 }
 
 
-#define T(M, S) cd_v8_type_##M##__##S##_TYPE
+#define T(A, B) CD_V8_TYPE(A, B)
 
 
 cd_error_t cd_visit_root(cd_state_t* state, void* obj) {
@@ -171,6 +196,7 @@ cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
 
 
 cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
+  cd_error_t err;
   cd_node_t node;
 
   node.obj = obj;
@@ -180,6 +206,7 @@ cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
     void** ptr;
     void* sh;
     void* name;
+    const char* cname;
     node.type = kCDNodeClosure;
 
     /* Load shared function info to lookup name */
@@ -188,6 +215,10 @@ cd_error_t cd_add_node(cd_state_t* state, void* obj, int type) {
 
     V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
     name = *ptr;
+
+    err = cd_v8_to_cstr(state, name, &cname);
+    if (!cd_is_ok(err))
+      return err;
   } else {
     node.type = kCDNodeHidden;
   }

@@ -51,6 +51,8 @@
     X(class_Map__instance_attributes__int)                                    \
     X(class_Map__instance_descriptors__DescriptorArray)                       \
     X(class_Map__instance_size__int)                                          \
+    X(class_SeqOneByteString__chars__char)                                    \
+    X(class_SeqTwoByteString__chars__char)                                    \
     X(class_SharedFunctionInfo__inferred_name__String)                        \
     X(class_SharedFunctionInfo__name__Object)                                 \
     X(class_SharedFunctionInfo__script__Object)                               \
@@ -152,6 +154,8 @@
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
 #undef CD_V8_CONSTANT_VALUE
+
+#define CD_V8_TYPE(M, S) cd_v8_type_##M##__##S##_TYPE
 
 cd_error_t cd_v8_init(cd_obj_t* binary, cd_obj_t* core);
 
