@@ -302,6 +302,6 @@ void cd_print_nodes(cd_state_t* state) {
             node->id);
 
     if (q != QUEUE_PREV(&state->nodes))
-      dprintf(state->output, ", ");
+      dprintf(state->output, ",\n");
   }
 }

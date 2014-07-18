@@ -5,6 +5,7 @@
 #include "state.h"
 #include "v8constants.h"
 #include "v8helpers.h"
+#include "visitor.h"
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -22,13 +23,13 @@ cd_error_t cd_collector_init(cd_state_t* state) {
 void cd_collector_destroy(cd_state_t* state) {
   while (!QUEUE_EMPTY(&state->queue)) {
     QUEUE* q;
-    cd_collect_item_t* item;
+    cd_node_t* node;
 
     q = QUEUE_HEAD(&state->queue);
     QUEUE_REMOVE(q);
 
-    item = container_of(q, cd_collect_item_t, member);
-    free(item);
+    node = container_of(q, cd_node_t, member);
+    free(node);
   }
 }
 
@@ -70,7 +71,7 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   void** pmap;
   void* map;
   uint8_t* attrs;
-  cd_collect_item_t* item;
+  cd_node_t* node;
 
   obj = ptr;
 
@@ -88,13 +89,13 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   /* Just to verify that the object has live map */
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
 
-  item = malloc(sizeof(*item));
-  if (item == NULL)
-    return cd_error_str(kCDErrNoMem, "cd_collect_item_t");
+  node = malloc(sizeof(*node));
+  if (node == NULL)
+    return cd_error_str(kCDErrNoMem, "cd_node_t");
 
-  item->obj = obj;
+  node->obj = obj;
 
-  QUEUE_INSERT_TAIL(&state->queue, &item->member);
+  QUEUE_INSERT_TAIL(&state->queue, &node->member);
 
   return cd_ok();
 }

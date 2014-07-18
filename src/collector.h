@@ -5,13 +5,6 @@
 #include "queue.h"
 #include "state.h"
 
-typedef struct cd_collect_item_s cd_collect_item_t;
-
-struct cd_collect_item_s {
-  void* obj;
-  QUEUE member;
-};
-
 /* Collect roots on the stack of the core file */
 
 cd_error_t cd_collector_init(cd_state_t* state);
