@@ -74,3 +74,19 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
 
   return cd_ok();
 }
+
+
+void cd_strings_print(cd_strings_t* strings, int fd) {
+  unsigned int i;
+  unsigned int len;
+
+  len = cd_list_len(&strings->list);
+  for (i = 0; i < len; i++) {
+    void* str;
+    cd_list_get(&strings->list, i, &str);
+    if (i == len - 1)
+      dprintf(fd, "\"%s\"", str);
+    else
+      dprintf(fd, "\"%s\", ", str);
+  }
+}

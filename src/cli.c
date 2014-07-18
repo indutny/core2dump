@@ -254,13 +254,16 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "  \"nodes\": [],\n"
       "  \"edges\": [],\n"
       "  \"trace_function_infos\": [],\n"
-      "  \"trace_tree\": [],\n"
-      "  \"strings\": []\n"
-      "}\n",
+      "  \"trace_tree\": [],\n",
       42,
       cd_list_len(&state->nodes),
       0,
       0);
+
+  /* Print all accumulated strings */
+  dprintf(state->output, "  \"strings\": [ ");
+  cd_strings_print(&state->strings, state->output);
+  dprintf(state->output, " ]\n}");
 
   return cd_ok();
 }

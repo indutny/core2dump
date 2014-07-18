@@ -18,5 +18,6 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
                            const char** res,
                            const char* str,
                            int len);
+void cd_strings_print(cd_strings_t* strings, int fd);
 
 #endif  /* SRC_STRINGS_H_ */
