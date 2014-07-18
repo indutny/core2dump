@@ -198,7 +198,18 @@ int cd_list_pop(cd_list_t* list, void* res) {
   }
 
   /* Copy-out the result */
-  memcpy(res, &list->items[list->off--], list->item_size);
+  memcpy(res, list->items + (--list->off) * list->item_size, list->item_size);
+
+  return 0;
+}
+
+
+int cd_list_get(cd_list_t* list, unsigned int index, void* res) {
+  if (index >= list->off)
+    return -1;
+
+  /* Copy-out the result */
+  memcpy(res, &list->items[index], list->item_size);
 
   return 0;
 }

@@ -26,23 +26,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
     goto failed_nodes_init;
   }
 
-  if (cd_list_init(&state->strings.list, 128, sizeof(void*)) != 0) {
-    err = cd_error_str(kCDErrNoMem, "cd_list_t strings");
-    goto failed_strings_list_init;
-  }
-
-  if (cd_hashmap_init(&state->strings.map, 128) != 0) {
-    err = cd_error_str(kCDErrNoMem, "cd_hashmap_t strings");
-    goto failed_strings_map_init;
-  }
-
   return cd_ok();
-
-failed_strings_map_init:
-  cd_hashmap_destroy(&state->strings.map);
-
-failed_strings_list_init:
-  cd_list_free(&state->nodes);
 
 failed_nodes_init:
   cd_list_free(&state->queue);
@@ -55,14 +39,6 @@ failed_queue_init:
 void cd_visitor_destroy(cd_state_t* state) {
   cd_list_free(&state->queue);
   cd_list_free(&state->nodes);
-  while (cd_list_len(&state->strings.list) != 0) {
-    void* ptr;
-
-    cd_list_pop(&state->strings.list, &ptr);
-    free(ptr);
-  }
-  cd_list_free(&state->strings.list);
-  cd_hashmap_destroy(&state->strings.map);
 }
 
 

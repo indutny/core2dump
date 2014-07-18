@@ -44,6 +44,7 @@ void cd_list_free(cd_list_t* list);
 int cd_list_push(cd_list_t* list, void* value);
 int cd_list_shift(cd_list_t* list, void* res);
 int cd_list_pop(cd_list_t* list, void* res);
+int cd_list_get(cd_list_t* list, unsigned int index, void* res);
 unsigned int cd_list_len(cd_list_t* list);
 
 #endif  /* SRC_COMMON_H */

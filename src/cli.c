@@ -8,6 +8,7 @@
 #include "collector.h"
 #include "common.h"
 #include "obj.h"
+#include "strings.h"
 #include "version.h"
 #include "visitor.h"
 #include "v8constants.h"
@@ -170,6 +171,10 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
 
   state.output = output;
 
+  err = cd_strings_init(&state.strings);
+  if (!cd_is_ok(err))
+    goto failed_cd_strings_init;
+
   err = cd_v8_init(state.binary, state.core);
   if (!cd_is_ok(err))
     goto failed_v8_init;
@@ -194,6 +199,9 @@ failed_collect_roots:
   cd_visitor_destroy(&state);
 
 failed_v8_init:
+  cd_strings_destroy(&state.strings);
+
+failed_cd_strings_init:
   cd_obj_free(state.binary);
 
 failed_binary_obj:

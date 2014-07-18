@@ -3,6 +3,7 @@
 
 #include "obj.h"
 #include "common.h"
+#include "strings.h"
 
 typedef struct cd_state_s cd_state_t;
 
@@ -15,10 +16,7 @@ struct cd_state_s {
   cd_list_t queue;
   cd_list_t nodes;
 
-  struct {
-    cd_list_t list;
-    cd_hashmap_t map;
-  } strings;
+  cd_strings_t strings;
 
   intptr_t zap_bit;
 };
