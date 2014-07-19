@@ -147,7 +147,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
 
     off = cd_v8_class_JSObject__properties__FixedArray;
     V8_CORE_PTR(node->obj, off, start);
-    V8_CORE_PTR(node->obj, off + size * state->ptr_size, end);
+    V8_CORE_PTR(node->obj, off + size, end);
   } else if (type == T(Map, MAP)) {
     int off;
 
@@ -351,7 +351,8 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
     } else if (type == T(JSArray, JS_ARRAY) ||
                type == T(JSArrayBuffer, JS_ARRAY_BUFFER) ||
                type == T(JSTypedArray, JS_TYPED_ARRAY) ||
-               type == T(FixedArray, FIXED_ARRAY)) {
+               type == T(FixedArray, FIXED_ARRAY) ||
+               type == T(FixedDoubleArray, FIXED_DOUBLE_ARRAY)) {
       node->type = kCDNodeArray;
     } else {
       node->type = kCDNodeHidden;

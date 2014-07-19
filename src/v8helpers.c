@@ -42,7 +42,7 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
 
   /* Constant size */
   if (instance_size != 0) {
-    *size = instance_size * (cd_obj_is_x64(state->core) ? 8 : 4);
+    *size = instance_size * state->ptr_size;
     return cd_ok();
   }
 
