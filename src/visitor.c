@@ -135,17 +135,21 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
       type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
       type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
       type == T(JSMessageObject, JS_MESSAGE_OBJECT) ||
-      /* NOTE: Function has non-heap fields, but who cares! */
       type == T(JSFunction, JS_FUNCTION)) {
     /* General object */
     int size;
     int off;
 
-    err = cd_v8_get_obj_size(state, map, type, &size);
+    err = cd_v8_get_obj_size(state, map, &size);
     if (!cd_is_ok(err))
       return err;
 
     off = cd_v8_class_JSObject__properties__FixedArray;
+
+    /* Skip code entry in functions */
+    if (type == T(JSFunction, JS_FUNCTION))
+      off += state->ptr_size;
+
     V8_CORE_PTR(node->obj, off, start);
     V8_CORE_PTR(node->obj, off + size, end);
   } else if (type == T(Map, MAP)) {
@@ -156,7 +160,9 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
     V8_CORE_PTR(node->obj, off, start);
 
     /* Constructor + Prototype */
-    V8_CORE_PTR(node->obj, off + state->ptr_size * kCDV8MapFieldCount, end);
+    V8_CORE_PTR(node->obj,
+                off + cd_v8_class_Map__dependent_code__DependentCode,
+                end);
   } else {
     /* Unknown type - ignore */
     return cd_ok();
@@ -189,6 +195,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
     /* Load map, if not provided */
     if (map == NULL) {
+      int ctype;
       void** pmap;
 
       V8_CORE_PTR(ptr, cd_v8_class_HeapObject__map__Map, pmap);
@@ -362,7 +369,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_v8_get_obj_size(state, node->map, type, &node->size);
+  err = cd_v8_get_obj_size(state, node->map, &node->size);
   if (!cd_is_ok(err))
     return err;
 

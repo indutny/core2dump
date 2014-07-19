@@ -30,10 +30,7 @@ cd_error_t cd_v8_get_obj_type(cd_state_t* state,
 }
 
 
-cd_error_t cd_v8_get_obj_size(cd_state_t* state,
-                              void* map,
-                              int type,
-                              int* size) {
+cd_error_t cd_v8_get_obj_size(cd_state_t* state, void* map, int* size) {
   int instance_size;
   uint8_t* ptr;
 

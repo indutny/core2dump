@@ -53,6 +53,7 @@ static const int kCDV8MapFieldCount = 2;
     X(class_JSObject__properties__FixedArray)                                 \
     X(class_Map__code_cache__Object)                                          \
     X(class_Map__constructor__Object)                                         \
+    X(class_Map__dependent_code__DependentCode)                               \
     X(class_Map__inobject_properties__int)                                    \
     X(class_Map__instance_attributes__int)                                    \
     X(class_Map__instance_descriptors__DescriptorArray)                       \
