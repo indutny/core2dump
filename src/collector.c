@@ -56,7 +56,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
     return err;
 
   for (off = 0; off < stack_size; off += state->ptr_size)
-    cd_collect_root(state, *(void**)((char*) stack + off));
+    cd_collect_root(state, *(void**)((char*) stack + stack_size - off));
 
   /* Visit registers */
   for (i = 0; i < thread.regs.count; i++)

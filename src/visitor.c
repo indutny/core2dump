@@ -195,7 +195,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
     /* Load map, if not provided */
     if (map == NULL) {
-      int ctype;
       void** pmap;
 
       V8_CORE_PTR(ptr, cd_v8_class_HeapObject__map__Map, pmap);
