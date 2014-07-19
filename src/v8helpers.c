@@ -30,7 +30,11 @@ cd_error_t cd_v8_get_obj_type(cd_state_t* state,
 }
 
 
-cd_error_t cd_v8_get_obj_size(cd_state_t* state, void* map, int* size) {
+cd_error_t cd_v8_get_obj_size(cd_state_t* state,
+                              void* obj,
+                              void* map,
+                              int type,
+                              int* size) {
   int instance_size;
   uint8_t* ptr;
 
@@ -44,6 +48,14 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state, void* map, int* size) {
   }
 
   /* Variable-size */
+  if (type == CD_V8_TYPE(FixedArray, FIXED_ARRAY) ||
+      type == CD_V8_TYPE(FixedDoubleArray, FIXED_DOUBLE_ARRAY)) {
+    void** len;
+    V8_CORE_PTR(obj, cd_v8_class_FixedArrayBase__length__SMI, len);
+    *size = V8_SMI(*len) * state->ptr_size;
+    return cd_ok();
+  }
+  /* TODO(indutny) Support Code, and others */
 
   *size = 0;
   return cd_ok();

@@ -7,6 +7,7 @@
 #include "v8constants.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 
 static cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node);
 static cd_error_t cd_queue_range(cd_state_t* state,
@@ -87,16 +88,11 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
 
 cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   cd_error_t err;
-  void** pmap;
-  void* map;
   char* start;
   char* end;
   int type;
 
-  V8_CORE_PTR(node->obj, cd_v8_class_HeapObject__map__Map, pmap);
-  map = *pmap;
-
-  if (!V8_IS_HEAPOBJECT(map))
+  if (!V8_IS_HEAPOBJECT(node->map))
     return cd_error(kCDErrNotObject);
 
   /* Load object type */
@@ -110,7 +106,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
     return err;
 
   /* Enqueue map itself */
-  err = cd_queue_ptr(state, node, map, NULL);
+  err = cd_queue_ptr(state, node, node->map, NULL);
   if (!cd_is_ok(err))
     return err;
 
@@ -123,36 +119,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   start = NULL;
   end = NULL;
 
-  if (type == T(JSObject, JS_OBJECT) ||
-      type == T(JSValue, JS_VALUE) ||
-      type == T(JSDate, JS_DATE) ||
-      type == T(JSArray, JS_ARRAY) ||
-      type == T(JSArrayBuffer, JS_ARRAY_BUFFER) ||
-      type == T(FixedArray, FIXED_ARRAY) ||
-      type == T(JSTypedArray, JS_TYPED_ARRAY) ||
-      type == T(JSDataView, JS_DATA_VIEW) ||
-      type == T(JSRegExp, JS_REGEXP) ||
-      type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
-      type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
-      type == T(JSMessageObject, JS_MESSAGE_OBJECT) ||
-      type == T(JSFunction, JS_FUNCTION)) {
-    /* General object */
-    int size;
-    int off;
-
-    err = cd_v8_get_obj_size(state, map, &size);
-    if (!cd_is_ok(err))
-      return err;
-
-    off = cd_v8_class_JSObject__properties__FixedArray;
-
-    /* Skip code entry in functions */
-    if (type == T(JSFunction, JS_FUNCTION))
-      off += state->ptr_size;
-
-    V8_CORE_PTR(node->obj, off, start);
-    V8_CORE_PTR(node->obj, off + size, end);
-  } else if (type == T(Map, MAP)) {
+  if (type == T(Map, MAP)) {
     int off;
 
     /* XXX Map::kPrototypeOffset = Map::kInstanceAttributes + kIntSize */
@@ -164,8 +131,22 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
                 off + cd_v8_class_Map__dependent_code__DependentCode,
                 end);
   } else {
-    /* Unknown type - ignore */
-    return cd_ok();
+    /* General object */
+    int size;
+    int off;
+
+    err = cd_v8_get_obj_size(state, node->obj, node->map, type, &size);
+    if (!cd_is_ok(err))
+      return err;
+
+    off = cd_v8_class_JSObject__properties__FixedArray;
+
+    /* Skip code entry in functions */
+    if (type == T(JSFunction, JS_FUNCTION))
+      off += state->ptr_size;
+
+    V8_CORE_PTR(node->obj, off, start);
+    V8_CORE_PTR(node->obj, off + size, end);
   }
 
   if (start != NULL && end != NULL)
@@ -368,7 +349,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_v8_get_obj_size(state, node->map, &node->size);
+  err = cd_v8_get_obj_size(state, node->obj, node->map, type, &node->size);
   if (!cd_is_ok(err))
     return err;
 
