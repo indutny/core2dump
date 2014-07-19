@@ -4,6 +4,10 @@
 #include "error.h"
 #include "obj.h"
 
+static const int kCDV8RegExpPattern = 1;
+static const int kCDV8MapFieldOffset = 4;
+static const int kCDV8MapFieldCount = 2;
+
 #define CD_V8_CONSTANTS_ENUM(X)                                               \
     X(AsciiStringTag)                                                         \
     X(ConsStringTag)                                                          \
@@ -58,6 +62,7 @@
     X(class_SharedFunctionInfo__script__Object)                               \
     X(class_SlicedString__offset__SMI)                                        \
     X(class_String__length__SMI)                                              \
+    X(class_JSRegExp__data__Object)                                           \
     X(frametype_ArgumentsAdaptorFrame)                                        \
     X(frametype_ConstructFrame)                                               \
     X(frametype_EntryConstructFrame)                                          \

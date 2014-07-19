@@ -6,6 +6,30 @@
 #include <stdio.h>
 #include <string.h>
 
+
+cd_error_t cd_v8_get_obj_type(cd_state_t* state,
+                              void* obj,
+                              void* map,
+                              int* type) {
+  uint8_t* ptype;
+
+  if (map == NULL) {
+    void** pmap;
+    V8_CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
+    map = *pmap;
+  }
+
+  if (!V8_IS_HEAPOBJECT(map))
+    return cd_error(kCDErrNotObject);
+
+  /* Load object type */
+  V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
+  *type = (int) *ptype;
+
+  return cd_ok();
+}
+
+
 cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               void* map,
                               int type,
@@ -34,18 +58,17 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
                          const char** res,
                          int* index) {
   void** ptr;
-  void* map;
   int type;
   int encoding;
   int repr;
   int length;
   char* data;
+  cd_error_t err;
 
   /* Determine string's type */
-  V8_CORE_PTR(str, cd_v8_class_HeapObject__map__Map, ptr);
-  map = *ptr;
-  V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptr);
-  type = *(uint8_t*) ptr;
+  err = cd_v8_get_obj_type(state, str, NULL, &type);
+  if (!cd_is_ok(err))
+    return err;
 
   if (type > cd_v8_FirstNonstringType)
     return cd_error(kCDErrNotString);
@@ -70,4 +93,25 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
     return cd_error(kCDErrNotFound);
 
   return cd_strings_copy(&state->strings, res, index, data, length);
+}
+
+
+cd_error_t cd_v8_fn_name(cd_state_t* state,
+                         void* fn,
+                         const char** res,
+                         int* index) {
+  void** ptr;
+  void* sh;
+  void* name;
+
+  /* Load shared function info to lookup name */
+  V8_CORE_PTR(fn,
+              cd_v8_class_JSFunction__shared__SharedFunctionInfo,
+              ptr);
+  sh = *ptr;
+
+  V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
+  name = *ptr;
+
+  return cd_v8_to_cstr(state, name, res, index);
 }

@@ -67,10 +67,11 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
 
 
 cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
+  cd_error_t err;
   void* obj;
   void** pmap;
   void* map;
-  uint8_t* attrs;
+  int type;
 
   obj = ptr;
 
@@ -86,7 +87,9 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
     return cd_error(kCDErrNotObject);
 
   /* Just to verify that the object has live map */
-  V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
+  err = cd_v8_get_obj_type(state, ptr, map, &type);
+  if (!cd_is_ok(err))
+    return err;
 
-  return cd_queue_ptr(state, &state->nodes.root, obj);
+  return cd_queue_ptr(state, &state->nodes.root, obj, map);
 }

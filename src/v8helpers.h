@@ -31,12 +31,20 @@
     ((uint32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                    \
                                       cd_v8_SmiTagMask)))                     \
 
+cd_error_t cd_v8_get_obj_type(cd_state_t* state,
+                              void* obj,
+                              void* map,
+                              int* type);
 cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               void* map,
                               int type,
                               int* size);
 cd_error_t cd_v8_to_cstr(cd_state_t* state,
                          void* str,
+                         const char** res,
+                         int* index);
+cd_error_t cd_v8_fn_name(cd_state_t* state,
+                         void* fn,
                          const char** res,
                          int* index);
 

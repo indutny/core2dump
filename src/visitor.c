@@ -13,10 +13,7 @@ static cd_error_t cd_queue_range(cd_state_t* state,
                                  cd_node_t* from,
                                  char* start,
                                  char* end);
-static cd_error_t cd_add_node(cd_state_t* state,
-                              cd_node_t* node,
-                              void* map,
-                              int type);
+static cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type);
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
@@ -89,13 +86,12 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
 
 
 cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
+  cd_error_t err;
   void** pmap;
   void* map;
   char* start;
   char* end;
-  uint8_t* ptype;
   int type;
-  cd_error_t err;
 
   V8_CORE_PTR(node->obj, cd_v8_class_HeapObject__map__Map, pmap);
   map = *pmap;
@@ -104,16 +100,17 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
     return cd_error(kCDErrNotObject);
 
   /* Load object type */
-  V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
-  type = *ptype;
+  err = cd_v8_get_obj_type(state, node->obj, node->map, &type);
+  if (!cd_is_ok(err))
+    return err;
 
   /* Add node to the nodes list as early as possible */
-  err = cd_add_node(state, node, map, type);
+  err = cd_add_node(state, node, type);
   if (!cd_is_ok(err))
     return err;
 
   /* Enqueue map itself */
-  err = cd_queue_ptr(state, node, map);
+  err = cd_queue_ptr(state, node, map, NULL);
   if (!cd_is_ok(err))
     return err;
 
@@ -154,11 +151,11 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
     int off;
 
     /* XXX Map::kPrototypeOffset = Map::kInstanceAttributes + kIntSize */
-    off = cd_v8_class_Map__instance_attributes__int + 4;
+    off = cd_v8_class_Map__instance_attributes__int + kCDV8MapFieldOffset;
     V8_CORE_PTR(node->obj, off, start);
 
     /* Constructor + Prototype */
-    V8_CORE_PTR(node->obj, off + state->ptr_size * 2, end);
+    V8_CORE_PTR(node->obj, off + state->ptr_size * kCDV8MapFieldCount, end);
   } else {
     /* Unknown type - ignore */
     return cd_ok();
@@ -171,7 +168,10 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
 }
 
 
-cd_error_t cd_queue_ptr(cd_state_t* state, cd_node_t* from, char* ptr) {
+cd_error_t cd_queue_ptr(cd_state_t* state,
+                        cd_node_t* from,
+                        void* ptr,
+                        void* map) {
   cd_node_t* node;
   cd_edge_t* edge;
   int existing;
@@ -185,6 +185,14 @@ cd_error_t cd_queue_ptr(cd_state_t* state, cd_node_t* from, char* ptr) {
     if (node == NULL)
       return cd_error_str(kCDErrNoMem, "cd_node_t");
     existing = 0;
+
+    /* Load map, if not provided */
+    if (map == NULL) {
+      void** pmap;
+
+      V8_CORE_PTR(ptr, cd_v8_class_HeapObject__map__Map, pmap);
+      map = *pmap;
+    }
   } else {
     existing = 1;
   }
@@ -201,6 +209,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state, cd_node_t* from, char* ptr) {
   /* Initialize and queue node if just created */
   if (!existing) {
     node->obj = ptr;
+    node->map = map;
     QUEUE_INSERT_TAIL(&state->queue, &node->member);
     QUEUE_INIT(&node->edges);
     node->edge_count = 0;
@@ -230,13 +239,10 @@ cd_error_t cd_queue_range(cd_state_t* state,
                           cd_node_t* from,
                           char* start,
                           char* end) {
-  size_t delta;
-
-  delta = cd_obj_is_x64(state->core) ? 8 : 4;
-  for (; start < end; start += delta) {
+  for (; start < end; start += state->ptr_size) {
     cd_error_t err;
 
-    err = cd_queue_ptr(state, from, *(void**) start);
+    err = cd_queue_ptr(state, from, *(void**) start, NULL);
     if (!cd_is_ok(err))
       return err;
   }
@@ -245,42 +251,68 @@ cd_error_t cd_queue_range(cd_state_t* state,
 }
 
 
-cd_error_t cd_add_node(cd_state_t* state,
-                       cd_node_t* node,
-                       void* map,
-                       int type) {
+cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
   cd_error_t err;
   const char* cname;
+  void** ptr;
 
   /* Mimique V8HeapExplorer::AddEntry */
   if (type == T(JSFunction, JS_FUNCTION)) {
-    void** ptr;
-    void* sh;
-    void* name;
-
-    /* Load shared function info to lookup name */
-    V8_CORE_PTR(node->obj,
-                cd_v8_class_JSFunction__shared__SharedFunctionInfo,
-                ptr);
-    sh = *ptr;
-
-    V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
-    name = *ptr;
-
-    err = cd_v8_to_cstr(state, name, &cname, &node->name);
-    if (!cd_is_ok(err))
-      return err;
+    err = cd_v8_fn_name(state, node->obj, &cname, &node->name);
 
     node->type = kCDNodeClosure;
-  } else {
-    err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
+  } else if (type == T(JSRegExp, JS_REGEXP)) {
+    void* f;
+    void* pattern;
+
+    /* Load fixed array */
+    V8_CORE_PTR(node->obj,
+                cd_v8_class_JSRegExp__data__Object,
+                ptr);
+    f = *ptr;
+
+    /* Load pattern */
+    V8_CORE_PTR(f,
+                cd_v8_class_FixedArray__data__uintptr_t +
+                    kCDV8RegExpPattern * state->ptr_size,
+                ptr);
+    pattern = *ptr;
+
+    err = cd_v8_to_cstr(state, pattern, &cname, &node->name);
+
+    node->type = kCDNodeRegExp;
+  } else if (type == T(JSObject, JS_OBJECT)) {
+    void* cons;
+    int ctype;
+
+    V8_CORE_PTR(node->map,
+                cd_v8_class_Map__constructor__Object,
+                ptr);
+    cons = *ptr;
+
+    err = cd_v8_get_obj_type(state, cons, NULL, &ctype);
     if (!cd_is_ok(err))
       return err;
 
+    if (ctype == T(JSFunction, JS_FUNCTION)) {
+      err = cd_v8_fn_name(state, cons, &cname, &node->name);
+    } else {
+      err = cd_strings_copy(&state->strings,
+                            &cname,
+                            &node->name,
+                            "Object",
+                            6);
+    }
+
+    node->type = kCDNodeObject;
+  } else {
+    err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
     node->type = kCDNodeHidden;
   }
+  if (!cd_is_ok(err))
+    return err;
 
-  err = cd_v8_get_obj_size(state, map, type, &node->size);
+  err = cd_v8_get_obj_size(state, node->map, type, &node->size);
   if (!cd_is_ok(err))
     return err;
 

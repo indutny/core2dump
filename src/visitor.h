@@ -41,6 +41,7 @@ enum cd_edge_type_e {
 struct cd_node_s {
   /* Raw V8 Heap pointer */
   void* obj;
+  void* map;
 
   cd_node_type_t type;
   int id;
@@ -67,6 +68,9 @@ void cd_visitor_destroy(struct cd_state_s* state);
 
 cd_error_t cd_visit_roots(struct cd_state_s* state);
 
-cd_error_t cd_queue_ptr(struct cd_state_s* state, cd_node_t* from, char* ptr);
+cd_error_t cd_queue_ptr(struct cd_state_s* state,
+                        cd_node_t* from,
+                        void* ptr,
+                        void* map);
 
 #endif  /* SRC_VISITOR_H_ */
