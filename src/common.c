@@ -5,8 +5,8 @@
 #include "common.h"
 
 
-static const int kCDHashmapMaxSkip = 24;
-static const int kCDHashmapGrowRate = 512;
+static const int kCDHashmapMaxSkip = 7;
+static const int kCDHashmapGrowRate = 1024;
 
 
 uint32_t cd_jenkins(const char* str, unsigned int len) {

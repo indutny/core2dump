@@ -35,7 +35,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&root->edges);
   root->edge_count = 0;
 
-  err = cd_strings_copy(&state->strings, &ptr, &root->name, "(root)", 6);
+  err = cd_strings_copy(&state->strings, &ptr, &root->name, "(GC roots)", 10);
   if (!cd_is_ok(err))
     return err;
 
