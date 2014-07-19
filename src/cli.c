@@ -20,6 +20,10 @@ static cd_error_t run(const char* input,
 static cd_error_t cd_obj2json(int input, int binary, int output);
 static cd_error_t cd_print_dump(cd_state_t* state);
 static void cd_print_nodes(cd_state_t* state);
+static void cd_print_edges(cd_state_t* state);
+
+
+static const int kCDNodeFieldCount = 6;
 
 
 void cd_print_version() {
@@ -164,8 +168,6 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
 
-  state.zap_bit = cd_obj_is_x64(state.core) ? 0x7000000000000000LL : 0x70000000;
-
   state.binary = cd_obj_new(binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
@@ -261,13 +263,18 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "  },\n",
       42,
       state->node_count,
-      0,
+      state->edge_count,
       0);
 
-  /* Print all accumulated node */
-  dprintf(state->output, "  \"nodes\": [ ");
+  /* Print all accumulated nodes */
+  dprintf(state->output, "  \"nodes\": [\n");
   cd_print_nodes(state);
-  dprintf(state->output, " ],\n");
+  dprintf(state->output, "  ],\n");
+
+  /* Print all accumulated edges */
+  dprintf(state->output, "  \"edges\": [\n");
+  cd_print_edges(state);
+  dprintf(state->output, "  ],\n");
 
   dprintf(state->output,
           "  \"edges\": [],\n"
@@ -275,7 +282,7 @@ cd_error_t cd_print_dump(cd_state_t* state) {
           "  \"trace_tree\": [],\n");
 
   /* Print all accumulated strings */
-  dprintf(state->output, "  \"strings\": [ ");
+  dprintf(state->output, "  \"strings\": [");
   cd_strings_print(&state->strings, state->output);
   dprintf(state->output, " ]\n");
   dprintf(state->output, "}\n");
@@ -287,21 +294,52 @@ cd_error_t cd_print_dump(cd_state_t* state) {
 void cd_print_nodes(cd_state_t* state) {
   QUEUE* q;
 
-  QUEUE_FOREACH(q, &state->nodes) {
+  QUEUE_FOREACH(q, &state->nodes.list) {
     cd_node_t* node;
 
     node = container_of(q, cd_node_t, member);
 
     dprintf(state->output,
-            "%d, %d, %d, %d, %d, %d",
+            "    %d, %d, %d, %d, %d, %d",
             node->type,
             node->name,
             node->id,
             node->size,
-            1,  /* XXX Edges */
-            node->id);
+            node->edge_count,
+            0);
 
-    if (q != QUEUE_PREV(&state->nodes))
+    if (q != QUEUE_PREV(&state->nodes.list))
       dprintf(state->output, ",\n");
+    else
+      dprintf(state->output, "\n");
+  }
+}
+
+
+void cd_print_edges(cd_state_t* state) {
+  QUEUE* nq;
+
+  QUEUE_FOREACH(nq, &state->nodes.list) {
+    QUEUE* eq;
+    cd_node_t* node;
+
+    node = container_of(nq, cd_node_t, member);
+    QUEUE_FOREACH(eq, &node->edges) {
+      cd_edge_t* edge;
+
+      edge = container_of(eq, cd_edge_t, member);
+      dprintf(state->output,
+              "    %d, %d, %d",
+              edge->type,
+              edge->name,
+              edge->to->id * kCDNodeFieldCount);
+
+      if (eq != QUEUE_PREV(&node->edges) ||
+          nq != QUEUE_PREV(&state->nodes.list)) {
+        dprintf(state->output, ",\n");
+      } else {
+        dprintf(state->output, "\n");
+      }
+    }
   }
 }

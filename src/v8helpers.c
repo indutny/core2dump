@@ -43,10 +43,7 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
 
   /* Determine string's type */
   V8_CORE_PTR(str, cd_v8_class_HeapObject__map__Map, ptr);
-
-  /* Ignore zap bit */
-  map = (void*) ((intptr_t) *ptr & (~state->zap_bit));
-
+  map = *ptr;
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptr);
   type = *(uint8_t*) ptr;
 

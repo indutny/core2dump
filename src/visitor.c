@@ -9,8 +9,10 @@
 #include <stdlib.h>
 
 static cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node);
-static cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr);
-static cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end);
+static cd_error_t cd_queue_range(cd_state_t* state,
+                                 cd_node_t* from,
+                                 char* start,
+                                 char* end);
 static cd_error_t cd_add_node(cd_state_t* state,
                               cd_node_t* node,
                               void* map,
@@ -18,24 +20,30 @@ static cd_error_t cd_add_node(cd_state_t* state,
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
-  QUEUE_INIT(&state->nodes);
+  QUEUE_INIT(&state->nodes.list);
   state->node_count = 0;
+  state->edge_count = 0;
+
+  if (cd_hashmap_init(&state->nodes.map, 1024) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_init(nodes.map)");
 
   return cd_ok();
 }
 
 
 void cd_visitor_destroy(cd_state_t* state) {
-  while (!QUEUE_EMPTY(&state->nodes)) {
+  while (!QUEUE_EMPTY(&state->nodes.list)) {
     QUEUE* q;
     cd_node_t* node;
 
-    q = QUEUE_HEAD(&state->nodes);
+    q = QUEUE_HEAD(&state->nodes.list);
     QUEUE_REMOVE(q);
 
     node = container_of(q, cd_node_t, member);
     free(node);
   }
+
+  cd_hashmap_destroy(&state->nodes.map);
 }
 
 
@@ -46,6 +54,7 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
 
     q = QUEUE_HEAD(&state->queue);
     QUEUE_REMOVE(q);
+
     node = container_of(q, cd_node_t, member);
 
     /* Node will be readded to `nodes` in case of success */
@@ -70,27 +79,30 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   cd_error_t err;
 
   V8_CORE_PTR(node->obj, cd_v8_class_HeapObject__map__Map, pmap);
-
-  /* If zapped - the node was already added */
   map = *pmap;
-  if (((intptr_t) map & state->zap_bit) == state->zap_bit)
-    return cd_error(kCDErrAlreadyVisited);
-  *pmap = (void*) ((intptr_t) map | state->zap_bit);
 
-  /* Enqueue map itself */
-  err = cd_queue_ptr(state, map);
-  if (!cd_is_ok(err))
-    return err;
+  if (!V8_IS_HEAPOBJECT(map))
+    return cd_error(kCDErrNotObject);
 
   /* Load object type */
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
   type = *ptype;
 
+  /* Add node to the nodes list as early as possible */
+  err = cd_add_node(state, node, map, type);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Enqueue map itself */
+  err = cd_queue_ptr(state, node, map);
+  if (!cd_is_ok(err))
+    return err;
+
   /* Mimique the v8's behaviour, see HeapObject::IterateBody */
 
   /* Strings... ignore for now */
   if (type < cd_v8_FirstNonstringType)
-    goto done;
+    return cd_ok();
 
   start = NULL;
   end = NULL;
@@ -130,42 +142,82 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
     V8_CORE_PTR(node->obj, off + state->ptr_size * 2, end);
   } else {
     /* Unknown type - ignore */
-    goto done;
+    return cd_ok();
   }
 
   if (start != NULL && end != NULL)
-    cd_queue_space(state, start, end);
-
-done:
-  return cd_add_node(state, node, map, type);
-}
-
-
-cd_error_t cd_queue_ptr(cd_state_t* state, char* ptr) {
-  cd_node_t* node;
-
-  if (!V8_IS_HEAPOBJECT(ptr))
-    return cd_error(kCDErrNotObject);
-
-  node = malloc(sizeof(*node));
-  if (node == NULL)
-    return cd_error_str(kCDErrNoMem, "queue ptr");
-
-  node->obj = ptr;
-  QUEUE_INSERT_TAIL(&state->queue, &node->member);
+    cd_queue_range(state, node, start, end);
 
   return cd_ok();
 }
 
 
-cd_error_t cd_queue_space(cd_state_t* state, char* start, char* end) {
+cd_error_t cd_queue_ptr(cd_state_t* state, cd_node_t* from, char* ptr) {
+  cd_node_t* node;
+  cd_edge_t* edge;
+  int existing;
+
+  if (!V8_IS_HEAPOBJECT(ptr))
+    return cd_error(kCDErrNotObject);
+
+  node = cd_hashmap_get(&state->nodes.map, (const char*) &ptr, sizeof(ptr));
+  if (node == NULL) {
+    node = malloc(sizeof(*node));
+    if (node == NULL)
+      return cd_error_str(kCDErrNoMem, "cd_node_t");
+    existing = 0;
+  } else {
+    existing = 1;
+  }
+
+  if (from != NULL) {
+    edge = malloc(sizeof(*edge));
+    if (edge == NULL) {
+      if (!existing)
+        free(node);
+      return cd_error_str(kCDErrNoMem, "cd_edge_t");
+    }
+  }
+
+  /* Initialize and queue node if just created */
+  if (!existing) {
+    node->obj = ptr;
+    QUEUE_INSERT_TAIL(&state->queue, &node->member);
+    QUEUE_INIT(&node->edges);
+    node->edge_count = 0;
+  }
+
+  /* Fill the edge */
+
+  if (from == NULL)
+    return cd_ok();
+
+  from->edge_count++;
+  edge->from = from;
+  edge->to = node;
+
+  /* TODO(indutny) Figure out theese */
+  edge->type = kCDEdgeElement;
+  edge->name = 0;
+
+  QUEUE_INSERT_TAIL(&from->edges, &edge->member);
+  state->edge_count++;
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_queue_range(cd_state_t* state,
+                          cd_node_t* from,
+                          char* start,
+                          char* end) {
   size_t delta;
 
   delta = cd_obj_is_x64(state->core) ? 8 : 4;
   for (; start < end; start += delta) {
     cd_error_t err;
 
-    err = cd_queue_ptr(state, *(void**) start);
+    err = cd_queue_ptr(state, from, *(void**) start);
     if (!cd_is_ok(err))
       return err;
   }
@@ -215,7 +267,14 @@ cd_error_t cd_add_node(cd_state_t* state,
 
   node->id = state->node_count++;
 
-  QUEUE_INSERT_TAIL(&state->nodes, &node->member);
+  if (cd_hashmap_insert(&state->nodes.map,
+                        (const char*) &node->obj,
+                        sizeof(node->obj),
+                        node) != 0) {
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
+  }
+
+  QUEUE_INSERT_TAIL(&state->nodes.list, &node->member);
 
   return cd_ok();
 }

@@ -71,7 +71,6 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   void** pmap;
   void* map;
   uint8_t* attrs;
-  cd_node_t* node;
 
   obj = ptr;
 
@@ -89,13 +88,5 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   /* Just to verify that the object has live map */
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
 
-  node = malloc(sizeof(*node));
-  if (node == NULL)
-    return cd_error_str(kCDErrNoMem, "cd_node_t");
-
-  node->obj = obj;
-
-  QUEUE_INSERT_TAIL(&state->queue, &node->member);
-
-  return cd_ok();
+  return cd_queue_ptr(state, NULL, obj);
 }
