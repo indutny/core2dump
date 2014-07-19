@@ -239,13 +239,8 @@ cd_error_t cd_queue_range(cd_state_t* state,
                           cd_node_t* from,
                           char* start,
                           char* end) {
-  for (; start < end; start += state->ptr_size) {
-    cd_error_t err;
-
-    err = cd_queue_ptr(state, from, *(void**) start, NULL);
-    if (!cd_is_ok(err))
-      return err;
-  }
+  for (; start < end; start += state->ptr_size)
+    cd_queue_ptr(state, from, *(void**) start, NULL);
 
   return cd_ok();
 }
