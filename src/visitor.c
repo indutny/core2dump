@@ -128,6 +128,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
       type == T(JSDate, JS_DATE) ||
       type == T(JSArray, JS_ARRAY) ||
       type == T(JSArrayBuffer, JS_ARRAY_BUFFER) ||
+      type == T(FixedArray, FIXED_ARRAY) ||
       type == T(JSTypedArray, JS_TYPED_ARRAY) ||
       type == T(JSDataView, JS_DATA_VIEW) ||
       type == T(JSRegExp, JS_REGEXP) ||
@@ -328,9 +329,33 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
       err = cd_v8_to_cstr(state, node->obj, &cname, &node->name);
       node->type = kCDNodeString;
     }
+  } else if (type == T(SharedFunctionInfo, SHARED_FUNCTION_INFO)) {
+    void* name;
+
+    V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
+    name = *ptr;
+
+    err = cd_v8_to_cstr(state, name, &cname, &node->name);
+    node->type = kCDNodeCode;
+  } else if (type == T(HeapNumber, HEAP_NUMBER)) {
+    err = cd_strings_copy(&state->strings,
+                          &cname,
+                          &node->name,
+                          "number",
+                          6);
+    node->type = kCDNodeNumber;
   } else {
+    if (type == T(Code, CODE)) {
+      node->type = kCDNodeCode;
+    } else if (type == T(JSArray, JS_ARRAY) ||
+               type == T(JSArrayBuffer, JS_ARRAY_BUFFER) ||
+               type == T(JSTypedArray, JS_TYPED_ARRAY) ||
+               type == T(FixedArray, FIXED_ARRAY)) {
+      node->type = kCDNodeArray;
+    } else {
+      node->type = kCDNodeHidden;
+    }
     err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
-    node->type = kCDNodeHidden;
   }
   if (!cd_is_ok(err))
     return err;
