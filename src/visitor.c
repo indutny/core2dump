@@ -35,7 +35,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&root->edges);
   root->edge_count = 0;
 
-  err = cd_strings_copy(&state->strings, &ptr, &root->name, "<root>", 6);
+  err = cd_strings_copy(&state->strings, &ptr, &root->name, "(root)", 6);
   if (!cd_is_ok(err))
     return err;
 
@@ -281,7 +281,12 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
     err = cd_v8_to_cstr(state, pattern, &cname, &node->name);
 
     node->type = kCDNodeRegExp;
-  } else if (type == T(JSObject, JS_OBJECT)) {
+  } else if (type == T(JSObject, JS_OBJECT) ||
+             type == T(JSValue, JS_VALUE) ||
+             type == T(JSDate, JS_DATE) ||
+             type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
+             type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
+             type == T(JSMessageObject, JS_MESSAGE_OBJECT)) {
     void* cons;
     int ctype;
 
@@ -305,6 +310,29 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
     }
 
     node->type = kCDNodeObject;
+  } else if (type < cd_v8_FirstNonstringType) {
+    int repr;
+
+    repr = type & cd_v8_StringRepresentationMask;
+
+    if (repr == cd_v8_ConsStringTag) {
+      err = cd_strings_copy(&state->strings,
+                            &cname,
+                            &node->name,
+                            "(concatenated string)",
+                            21);
+      node->type = kCDNodeConString;
+    } else if (repr == cd_v8_SlicedStringTag) {
+      err = cd_strings_copy(&state->strings,
+                            &cname,
+                            &node->name,
+                            "(sliced string)",
+                            15);
+      node->type = kCDNodeSlicedString;
+    } else {
+      err = cd_v8_to_cstr(state, node->obj, &cname, &node->name);
+      node->type = kCDNodeString;
+    }
   } else {
     err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
     node->type = kCDNodeHidden;

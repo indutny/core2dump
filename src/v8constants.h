@@ -21,6 +21,8 @@ static const int kCDV8MapFieldCount = 2;
     X(NotStringTag)                                                           \
     X(PointerSizeLog2)                                                        \
     X(SeqStringTag)                                                           \
+    X(ConsStringTag)                                                          \
+    X(SlicedStringTag)                                                        \
     X(SmiShiftSize)                                                           \
     X(SmiTag)                                                                 \
     X(SmiTagMask)                                                             \

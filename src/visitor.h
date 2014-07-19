@@ -25,7 +25,7 @@ enum cd_node_type_e {
   kCDNodeNative,
   kCDNodeSynthetic,
   kCDNodeConString,
-  kCDNodeSliceString
+  kCDNodeSlicedString
 };
 
 enum cd_edge_type_e {
