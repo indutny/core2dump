@@ -88,5 +88,5 @@ cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
   /* Just to verify that the object has live map */
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, attrs);
 
-  return cd_queue_ptr(state, NULL, obj);
+  return cd_queue_ptr(state, &state->nodes.root, obj);
 }

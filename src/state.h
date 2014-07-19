@@ -5,6 +5,7 @@
 #include "common.h"
 #include "strings.h"
 #include "queue.h"
+#include "visitor.h"
 
 typedef struct cd_state_s cd_state_t;
 
@@ -16,6 +17,7 @@ struct cd_state_s {
 
   QUEUE queue;
   struct {
+    cd_node_t root;
     QUEUE list;
     cd_hashmap_t map;
   } nodes;

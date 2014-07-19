@@ -20,9 +20,27 @@ static cd_error_t cd_add_node(cd_state_t* state,
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
+  cd_error_t err;
+  cd_node_t* root;
+  const char* ptr;
+
   QUEUE_INIT(&state->nodes.list);
+
   state->node_count = 0;
   state->edge_count = 0;
+
+  /* Init root and insert it */
+  root = &state->nodes.root;
+  QUEUE_INSERT_TAIL(&state->nodes.list, &root->member);
+  root->type = kCDNodeSynthetic;
+  root->id = state->node_count++;
+  root->size = 0;
+  QUEUE_INIT(&root->edges);
+  root->edge_count = 0;
+
+  err = cd_strings_copy(&state->strings, &ptr, &root->name, "<root>", 6);
+  if (!cd_is_ok(err))
+    return err;
 
   if (cd_hashmap_init(&state->nodes.map, 1024) != 0)
     return cd_error_str(kCDErrNoMem, "cd_hashmap_init(nodes.map)");
@@ -40,7 +58,8 @@ void cd_visitor_destroy(cd_state_t* state) {
     QUEUE_REMOVE(q);
 
     node = container_of(q, cd_node_t, member);
-    free(node);
+    if (node != &state->nodes.root)
+      free(node);
   }
 
   cd_hashmap_destroy(&state->nodes.map);

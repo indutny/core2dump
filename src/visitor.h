@@ -3,7 +3,10 @@
 
 #include "common.h"
 #include "error.h"
-#include "state.h"
+#include "queue.h"
+
+/* Forward declarations */
+struct cd_state_s;
 
 typedef struct cd_node_s cd_node_t;
 typedef struct cd_edge_s cd_edge_t;
@@ -59,11 +62,11 @@ struct cd_edge_s {
   QUEUE member;
 };
 
-cd_error_t cd_visitor_init(cd_state_t* state);
-void cd_visitor_destroy(cd_state_t* state);
+cd_error_t cd_visitor_init(struct cd_state_s* state);
+void cd_visitor_destroy(struct cd_state_s* state);
 
-cd_error_t cd_visit_roots(cd_state_t* state);
+cd_error_t cd_visit_roots(struct cd_state_s* state);
 
-cd_error_t cd_queue_ptr(cd_state_t* state, cd_node_t* from, char* ptr);
+cd_error_t cd_queue_ptr(struct cd_state_s* state, cd_node_t* from, char* ptr);
 
 #endif  /* SRC_VISITOR_H_ */
