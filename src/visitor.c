@@ -147,7 +147,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
 
     off = cd_v8_class_JSObject__properties__FixedArray;
     V8_CORE_PTR(node->obj, off, start);
-    V8_CORE_PTR(node->obj, off + size, end);
+    V8_CORE_PTR(node->obj, off + size * state->ptr_size, end);
   } else if (type == T(Map, MAP)) {
     int off;
 
@@ -282,11 +282,12 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
              type == T(JSDate, JS_DATE) ||
              type == T(JSGlobalObject, JS_GLOBAL_OBJECT) ||
              type == T(JSBuiltinsObject, JS_BUILTINS_OBJECT) ||
-             type == T(JSMessageObject, JS_MESSAGE_OBJECT)) {
+             type == T(JSMessageObject, JS_MESSAGE_OBJECT) ||
+             type == T(Map, MAP)) {
     void* cons;
     int ctype;
 
-    V8_CORE_PTR(node->map,
+    V8_CORE_PTR((type == T(Map, MAP) ? node->obj : node->map),
                 cd_v8_class_Map__constructor__Object,
                 ptr);
     cons = *ptr;
