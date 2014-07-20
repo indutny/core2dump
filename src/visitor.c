@@ -102,7 +102,8 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
   while (!QUEUE_EMPTY(&state->queue) != 0) {
     cd_node_t* node;
 
-    q = QUEUE_HEAD(&state->queue);
+    /* Pick last */
+    q = QUEUE_PREV(&state->queue);
     QUEUE_REMOVE(q);
 
     node = container_of(q, cd_node_t, member);
@@ -134,12 +135,6 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   int type;
 
   type = node->v8_type;
-
-  if (cd_hashmap_get(&state->nodes.map,
-                     (const char*) &node->obj,
-                     sizeof(node->obj)) != NULL) {
-    return cd_error(kCDErrAlreadyVisited);
-  }
 
   /* Add node to the nodes list as early as possible */
   err = cd_add_node(state, node);
@@ -275,7 +270,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
   /* Fill the edge */
   if (edge == NULL)
-    return cd_ok();
+    goto done;
 
   edge->from = from;
   edge->to = node;
@@ -290,6 +285,17 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   QUEUE_INSERT_TAIL(&node->edges.incoming, &edge->in);
 
   state->edge_count++;
+
+done:
+  if (cd_hashmap_insert(&state->nodes.map,
+                        (const char*) &node->obj,
+                        sizeof(node->obj),
+                        node) != 0) {
+    if (!existing)
+      free(node);
+    free(edge);
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
+  }
 
   return cd_ok();
 }
@@ -423,13 +429,6 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
   }
   if (!cd_is_ok(err))
     return err;
-
-  if (cd_hashmap_insert(&state->nodes.map,
-                        (const char*) &node->obj,
-                        sizeof(node->obj),
-                        node) != 0) {
-    return cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
-  }
 
   QUEUE_INSERT_TAIL(&state->nodes.list, &node->member);
 
