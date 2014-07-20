@@ -44,6 +44,7 @@ struct cd_node_s {
   void* map;
 
   cd_node_type_t type;
+  int v8_type;
   int id;
   int name;
   int size;

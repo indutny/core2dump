@@ -14,7 +14,11 @@ static cd_error_t cd_queue_range(cd_state_t* state,
                                  cd_node_t* from,
                                  char* start,
                                  char* end);
-static cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type);
+static cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node);
+static cd_error_t cd_node_init(cd_state_t* state,
+                               cd_node_t* node,
+                               void* ptr,
+                               void* map);
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
@@ -92,16 +96,10 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   char* end;
   int type;
 
-  if (!V8_IS_HEAPOBJECT(node->map))
-    return cd_error(kCDErrNotObject);
-
-  /* Load object type */
-  err = cd_v8_get_obj_type(state, node->obj, node->map, &type);
-  if (!cd_is_ok(err))
-    return err;
+  type = node->v8_type;
 
   /* Add node to the nodes list as early as possible */
-  err = cd_add_node(state, node, type);
+  err = cd_add_node(state, node);
   if (!cd_is_ok(err))
     return err;
 
@@ -132,12 +130,7 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
                 end);
   } else {
     /* General object */
-    int size;
     int off;
-
-    err = cd_v8_get_obj_size(state, node->obj, node->map, type, &size);
-    if (!cd_is_ok(err))
-      return err;
 
     off = cd_v8_class_JSObject__properties__FixedArray;
 
@@ -146,11 +139,51 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
       off += state->ptr_size;
 
     V8_CORE_PTR(node->obj, off, start);
-    V8_CORE_PTR(node->obj, off + size, end);
+    V8_CORE_PTR(node->obj, off + node->size, end);
   }
 
   if (start != NULL && end != NULL)
     cd_queue_range(state, node, start, end);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_node_init(cd_state_t* state,
+                        cd_node_t* node,
+                        void* ptr,
+                        void* map) {
+  cd_error_t err;
+
+  /* Load map, if not provided */
+  if (map == NULL) {
+    void** pmap;
+
+    V8_CORE_PTR(ptr, cd_v8_class_HeapObject__map__Map, pmap);
+    map = *pmap;
+
+    if (!V8_IS_HEAPOBJECT(map))
+      return cd_error(kCDErrNotObject);
+  }
+
+  node->obj = ptr;
+  node->map = map;
+
+  /* Load object type and size */
+  err = cd_v8_get_obj_type(state, node->obj, node->map, &node->v8_type);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_v8_get_obj_size(state,
+                           node->obj,
+                           node->map,
+                           node->v8_type,
+                           &node->size);
+  if (!cd_is_ok(err))
+    return err;
+
+  QUEUE_INIT(&node->edges);
+  node->edge_count = 0;
 
   return cd_ok();
 }
@@ -173,14 +206,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
     if (node == NULL)
       return cd_error_str(kCDErrNoMem, "cd_node_t");
     existing = 0;
-
-    /* Load map, if not provided */
-    if (map == NULL) {
-      void** pmap;
-
-      V8_CORE_PTR(ptr, cd_v8_class_HeapObject__map__Map, pmap);
-      map = *pmap;
-    }
   } else {
     existing = 1;
   }
@@ -192,20 +217,26 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
         free(node);
       return cd_error_str(kCDErrNoMem, "cd_edge_t");
     }
+  } else {
+    edge = NULL;
   }
 
   /* Initialize and queue node if just created */
   if (!existing) {
-    node->obj = ptr;
-    node->map = map;
+    cd_error_t err;
+
+    err = cd_node_init(state, node, ptr, map);
+    if (!cd_is_ok(err)) {
+      free(node);
+      free(edge);
+      return err;
+    }
+
     QUEUE_INSERT_TAIL(&state->queue, &node->member);
-    QUEUE_INIT(&node->edges);
-    node->edge_count = 0;
   }
 
   /* Fill the edge */
-
-  if (from == NULL)
+  if (edge == NULL)
     return cd_ok();
 
   from->edge_count++;
@@ -215,6 +246,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   /* TODO(indutny) Figure out theese */
   edge->type = kCDEdgeElement;
   edge->name = 0;
+
 
   QUEUE_INSERT_TAIL(&from->edges, &edge->member);
   state->edge_count++;
@@ -234,10 +266,13 @@ cd_error_t cd_queue_range(cd_state_t* state,
 }
 
 
-cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
+cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
   cd_error_t err;
   const char* cname;
   void** ptr;
+  int type;
+
+  type = node->v8_type;
 
   /* Mimique V8HeapExplorer::AddEntry */
   if (type == T(JSFunction, JS_FUNCTION)) {
@@ -346,10 +381,6 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node, int type) {
     }
     err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
   }
-  if (!cd_is_ok(err))
-    return err;
-
-  err = cd_v8_get_obj_size(state, node->obj, node->map, type, &node->size);
   if (!cd_is_ok(err))
     return err;
 
