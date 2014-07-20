@@ -22,6 +22,9 @@ static cd_error_t cd_node_init(cd_state_t* state,
 static void cd_node_free(cd_state_t* state, cd_node_t* node);
 
 
+static const int kCDNodesInitialSize = 65536;
+
+
 cd_error_t cd_visitor_init(cd_state_t* state) {
   cd_error_t err;
   cd_node_t* root;
@@ -48,7 +51,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   if (!cd_is_ok(err))
     return err;
 
-  if (cd_hashmap_init(&state->nodes.map, 1024) != 0)
+  if (cd_hashmap_init(&state->nodes.map, kCDNodesInitialSize) != 0)
     return cd_error_str(kCDErrNoMem, "cd_hashmap_init(nodes.map)");
 
   return cd_ok();

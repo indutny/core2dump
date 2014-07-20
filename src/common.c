@@ -8,8 +8,8 @@
 #include "common.h"
 
 
-static const int kCDHashmapMaxSkip = 7;
-static const int kCDHashmapGrowRate = 1024;
+static const int kCDHashmapMaxSkip = 16;
+static const int kCDHashmapGrowRateLimit = 262144;
 
 
 uint32_t cd_jenkins(const char* str, unsigned int len) {
@@ -59,6 +59,11 @@ int cd_hashmap_insert(cd_hashmap_t* map,
 
   do {
     int skip;
+    cd_hashmap_item_t* items;
+    cd_hashmap_item_t* nitems;
+    unsigned int i;
+    unsigned int count;
+    unsigned int grow;
 
     index = cd_jenkins(key, key_len) % map->count;
     for (skip = 0;
@@ -76,12 +81,12 @@ int cd_hashmap_insert(cd_hashmap_t* map,
       break;
 
     /* Grow is needed */
-    cd_hashmap_item_t* items;
-    cd_hashmap_item_t* nitems;
-    unsigned int i;
-    unsigned int count;
+    if (map->count < kCDHashmapGrowRateLimit)
+      grow = map->count;
+    else
+      grow = kCDHashmapGrowRateLimit;
 
-    nitems = calloc(sizeof(*nitems), map->count + kCDHashmapGrowRate);
+    nitems = calloc(sizeof(*nitems), map->count + grow);
     if (nitems == NULL)
       return -1;
 
@@ -89,7 +94,7 @@ int cd_hashmap_insert(cd_hashmap_t* map,
     items = map->items;
     count = map->count;
 
-    map->count += kCDHashmapGrowRate;
+    map->count += grow;
     map->items = nitems;
     for (i = 0; i < count; i++) {
       if (items[i].key == NULL)

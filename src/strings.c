@@ -8,6 +8,9 @@
 #include <string.h>
 
 
+static const int kCDStringsInitialSize = 65536;
+
+
 static void cd_strings_print_json(cd_strings_t* strings,
                                   cd_writebuf_t* buf,
                                   cd_strings_item_t* item);
@@ -15,7 +18,7 @@ static void cd_strings_print_json(cd_strings_t* strings,
 cd_error_t cd_strings_init(cd_strings_t* strings) {
   QUEUE_INIT(&strings->queue);
 
-  if (cd_hashmap_init(&strings->map, 128) != 0)
+  if (cd_hashmap_init(&strings->map, kCDStringsInitialSize) != 0)
     return cd_error_str(kCDErrNoMem, "cd_hashmap_t strings");
 
   strings->count = 0;
