@@ -180,21 +180,18 @@ cd_error_t cd_node_init(cd_state_t* state,
       return cd_error(kCDErrNotObject);
   }
 
+  /* Load object type and size */
+  err = cd_v8_get_obj_type(state, ptr, map, &node->v8_type);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_v8_get_obj_size(state, ptr, map, node->v8_type, &node->size);
+  if (!cd_is_ok(err))
+    return err;
+
   node->obj = ptr;
   node->map = map;
-
-  /* Load object type and size */
-  err = cd_v8_get_obj_type(state, node->obj, node->map, &node->v8_type);
-  if (!cd_is_ok(err))
-    return err;
-
-  err = cd_v8_get_obj_size(state,
-                           node->obj,
-                           node->map,
-                           node->v8_type,
-                           &node->size);
-  if (!cd_is_ok(err))
-    return err;
+  node->id = state->node_count++;
 
   QUEUE_INIT(&node->edges);
   node->edge_count = 0;
@@ -260,7 +257,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   /* TODO(indutny) Figure out theese */
   edge->type = kCDEdgeElement;
   edge->name = 0;
-
 
   QUEUE_INSERT_TAIL(&from->edges, &edge->member);
   state->edge_count++;
@@ -397,8 +393,6 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
   }
   if (!cd_is_ok(err))
     return err;
-
-  node->id = state->node_count++;
 
   if (cd_hashmap_insert(&state->nodes.map,
                         (const char*) &node->obj,
