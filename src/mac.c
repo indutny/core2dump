@@ -218,7 +218,7 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       goto fatal;
     }
 
-    if (cd_hashmap_init(&obj->syms, symtab->nsyms * 4) != 0) {
+    if (cd_hashmap_init(&obj->syms, symtab->nsyms * 4, 0) != 0) {
       err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
       goto fatal;
     }

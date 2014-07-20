@@ -17,6 +17,9 @@ struct cd_hashmap_item_s {
 struct cd_hashmap_s {
   unsigned int count;
   cd_hashmap_item_t* items;
+
+  /* If true - all keys are just raw pointers */
+  int ptr;
 };
 
 struct cd_writebuf_s {
@@ -29,7 +32,7 @@ struct cd_writebuf_s {
 
 uint32_t cd_jenkins(const char* str, unsigned int len);
 
-int cd_hashmap_init(cd_hashmap_t* map, unsigned int count);
+int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr);
 void cd_hashmap_destroy(cd_hashmap_t* map);
 
 int cd_hashmap_insert(cd_hashmap_t* map,

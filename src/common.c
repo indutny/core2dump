@@ -34,12 +34,13 @@ uint32_t cd_jenkins(const char* str, unsigned int len) {
 }
 
 
-int cd_hashmap_init(cd_hashmap_t* map, unsigned int count) {
+int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr) {
   map->items = calloc(sizeof(*map->items), count);
   if (map->items == NULL)
     return -1;
 
   map->count = count;
+  map->ptr = ptr;
 
   return 0;
 }
@@ -65,15 +66,25 @@ int cd_hashmap_insert(cd_hashmap_t* map,
     unsigned int count;
     unsigned int grow;
 
-    index = cd_jenkins(key, key_len) % map->count;
+    if (map->ptr)
+      index = cd_jenkins((const char*) &key, key_len) % map->count;
+    else
+      index = cd_jenkins(key, key_len) % map->count;
+
     for (skip = 0;
          skip < kCDHashmapMaxSkip && map->items[index].key != NULL;
          skip++) {
-      /* Equal entries */
-      if (map->items[index].key_len == key_len &&
-          strncmp(map->items[index].key, key, key_len) == 0) {
-        return 0;
+      cd_hashmap_item_t* item;
+
+      item = &map->items[index];
+
+      /* Equal entries - update */
+      if (key_len == item->key_len &&
+          (map->ptr ? item->key == key :
+                      (strncmp(item->key, key, key_len) == 0))) {
+        break;
       }
+
       index = (index + 1) % map->count;
     }
 
@@ -123,15 +134,24 @@ void* cd_hashmap_get(cd_hashmap_t* map,
                      unsigned int key_len) {
   uint32_t index;
 
-  index = cd_jenkins(key, key_len) % map->count;
+  if (map->ptr)
+    index = cd_jenkins((const char*) &key, key_len) % map->count;
+  else
+    index = cd_jenkins(key, key_len) % map->count;
+
   do {
+    cd_hashmap_item_t* item;
+
+    item = &map->items[index];
+
     /* Not found */
-    if (map->items[index].key == NULL)
+    if (item->key == NULL)
       return NULL;
 
-    if (key_len == map->items[index].key_len &&
-        strncmp(map->items[index].key, key, key_len) == 0) {
-      return map->items[index].value;
+    if (key_len == item->key_len &&
+        (map->ptr ? item->key == key :
+                    (strncmp(item->key, key, key_len) == 0))) {
+      return item->value;
     }
 
     /* Move forward */

@@ -22,6 +22,7 @@ static cd_error_t cd_node_init(cd_state_t* state,
 static void cd_node_free(cd_state_t* state, cd_node_t* node);
 
 
+static cd_node_t nil_node;
 static const int kCDNodesInitialSize = 65536;
 
 
@@ -51,7 +52,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   if (!cd_is_ok(err))
     return err;
 
-  if (cd_hashmap_init(&state->nodes.map, kCDNodesInitialSize) != 0)
+  if (cd_hashmap_init(&state->nodes.map, kCDNodesInitialSize, 1) != 0)
     return cd_error_str(kCDErrNoMem, "cd_hashmap_init(nodes.map)");
 
   return cd_ok();
@@ -215,7 +216,12 @@ void cd_node_free(cd_state_t* state, cd_node_t* node) {
     edge->from->edges.outgoing_count--;
     free(edge);
   }
-  QUEUE_INIT(&node->member);
+  QUEUE_REMOVE(&node->member);
+
+  cd_hashmap_insert(&state->nodes.map,
+                    (const char*) node->obj,
+                    sizeof(node->obj),
+                    &nil_node);
   free(node);
 
   state->nodes.count--;
@@ -233,7 +239,10 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   if (!V8_IS_HEAPOBJECT(ptr))
     return cd_error(kCDErrNotObject);
 
-  node = cd_hashmap_get(&state->nodes.map, (const char*) &ptr, sizeof(ptr));
+  node = cd_hashmap_get(&state->nodes.map, (const char*) ptr, sizeof(ptr));
+  if (node == &nil_node)
+    return cd_ok();
+
   if (node == NULL) {
     node = malloc(sizeof(*node));
     if (node == NULL)
@@ -288,7 +297,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
 done:
   if (cd_hashmap_insert(&state->nodes.map,
-                        (const char*) &node->obj,
+                        (const char*) node->obj,
                         sizeof(node->obj),
                         node) != 0) {
     if (!existing)
