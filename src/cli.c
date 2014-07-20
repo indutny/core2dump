@@ -268,7 +268,7 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "    \"trace_function_count\": %d\n"
       "  },\n",
       42,
-      state->node_count,
+      state->nodes.count,
       state->edge_count,
       0);
 

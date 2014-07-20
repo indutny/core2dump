@@ -17,11 +17,12 @@ struct cd_state_s {
 
   QUEUE queue;
   struct {
+    int id;
+    int count;
     cd_node_t root;
     QUEUE list;
     cd_hashmap_t map;
   } nodes;
-  int node_count;
   int edge_count;
 
   cd_strings_t strings;
