@@ -53,13 +53,27 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 
 void cd_visitor_destroy(cd_state_t* state) {
   while (!QUEUE_EMPTY(&state->nodes.list)) {
-    QUEUE* q;
+    QUEUE* qn;
     cd_node_t* node;
 
-    q = QUEUE_HEAD(&state->nodes.list);
-    QUEUE_REMOVE(q);
+    qn = QUEUE_HEAD(&state->nodes.list);
+    QUEUE_REMOVE(qn);
 
-    node = container_of(q, cd_node_t, member);
+    node = container_of(qn, cd_node_t, member);
+
+    /* Free edges */
+    while (!QUEUE_EMPTY(&node->edges)) {
+      QUEUE* qe;
+      cd_edge_t* edge;
+
+      qe = QUEUE_HEAD(&node->edges);
+      QUEUE_REMOVE(qe);
+
+      edge = container_of(qe, cd_edge_t, member);
+      free(edge);
+    }
+
+    /* Free node itself */
     if (node != &state->nodes.root)
       free(node);
   }
