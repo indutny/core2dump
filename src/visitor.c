@@ -29,15 +29,14 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 
   QUEUE_INIT(&state->nodes.list);
 
-  state->nodes.id = 0;
   state->nodes.count = 0;
+  state->nodes.id = 0;
   state->edge_count = 0;
 
   /* Init root and insert it */
   root = &state->nodes.root;
   QUEUE_INSERT_TAIL(&state->nodes.list, &root->member);
   root->type = kCDNodeSynthetic;
-  root->id = state->nodes.id++;
   root->size = 0;
   QUEUE_INIT(&root->edges.incoming);
   QUEUE_INIT(&root->edges.outgoing);
@@ -96,8 +95,8 @@ void cd_visitor_destroy(cd_state_t* state) {
 
 
 cd_error_t cd_visit_roots(cd_state_t* state) {
+  QUEUE* q;
   while (!QUEUE_EMPTY(&state->queue) != 0) {
-    QUEUE* q;
     cd_node_t* node;
 
     q = QUEUE_HEAD(&state->queue);
@@ -108,6 +107,14 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
     /* Node will be readded to `nodes` in case of success */
     if (!cd_is_ok(cd_visit_root(state, node)))
       cd_node_free(state, node);
+  }
+
+  /* Enumerate nodes */
+  QUEUE_FOREACH(q, &state->nodes.list) {
+    cd_node_t* node;
+
+    node = container_of(q, cd_node_t, member);
+    node->id = state->nodes.id++;
   }
 
   return cd_ok();
@@ -204,7 +211,6 @@ cd_error_t cd_node_init(cd_state_t* state,
 
   node->obj = ptr;
   node->map = map;
-  node->id = state->nodes.id++;
   state->nodes.count++;
 
   QUEUE_INIT(&node->member);
