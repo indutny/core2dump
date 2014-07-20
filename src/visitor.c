@@ -189,7 +189,6 @@ cd_error_t cd_node_init(cd_state_t* state,
 
   node->obj = ptr;
   node->map = map;
-  state->nodes.count++;
 
   QUEUE_INIT(&node->member);
   QUEUE_INIT(&node->edges.incoming);
@@ -223,8 +222,6 @@ void cd_node_free(cd_state_t* state, cd_node_t* node) {
                     sizeof(node->obj),
                     &nil_node);
   free(node);
-
-  state->nodes.count--;
 }
 
 
@@ -314,8 +311,10 @@ cd_error_t cd_queue_range(cd_state_t* state,
                           cd_node_t* from,
                           char* start,
                           char* end) {
-  for (; start < end; start += state->ptr_size)
-    cd_queue_ptr(state, from, *(void**) start, NULL);
+  const char* cur;
+
+  for (cur = start; cur < end; cur += state->ptr_size)
+    cd_queue_ptr(state, from, *(void**) cur, NULL);
 
   return cd_ok();
 }
@@ -440,6 +439,8 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
     return err;
 
   QUEUE_INSERT_TAIL(&state->nodes.list, &node->member);
+
+  state->nodes.count++;
 
   return cd_ok();
 }
