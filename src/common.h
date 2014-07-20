@@ -6,6 +6,7 @@
 
 typedef struct cd_hashmap_s cd_hashmap_t;
 typedef struct cd_hashmap_item_s cd_hashmap_item_t;
+typedef struct cd_writebuf_s cd_writebuf_t;
 
 struct cd_hashmap_item_s {
   const char* key;
@@ -16,6 +17,14 @@ struct cd_hashmap_item_s {
 struct cd_hashmap_s {
   unsigned int count;
   cd_hashmap_item_t* items;
+};
+
+struct cd_writebuf_s {
+  int fd;
+  unsigned int off;
+  unsigned int size;
+
+  char* buf;
 };
 
 uint32_t cd_jenkins(const char* str, unsigned int len);
@@ -30,6 +39,12 @@ int cd_hashmap_insert(cd_hashmap_t* map,
 void* cd_hashmap_get(cd_hashmap_t* map,
                      const char* key,
                      unsigned int key_len);
+
+int cd_writebuf_init(cd_writebuf_t* buf, int fd, unsigned int size);
+void cd_writebuf_destroy(cd_writebuf_t* buf);
+
+int cd_writebuf_put(cd_writebuf_t* buf, char* fmt, ...);
+void cd_writebuf_flush(cd_writebuf_t* buf);
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 

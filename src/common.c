@@ -1,5 +1,8 @@
+#include <assert.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "common.h"
@@ -129,4 +132,80 @@ void* cd_hashmap_get(cd_hashmap_t* map,
     /* Move forward */
     index = (index + 1) % map->count;
   } while (1);
+}
+
+
+int cd_writebuf_init(cd_writebuf_t* buf, int fd, unsigned int size) {
+  buf->fd = fd;
+  buf->off = 0;
+  buf->size = size;
+  /* Trailing zero in snprintf */
+  buf->buf = malloc(size + 1);
+  if (buf->buf == NULL)
+    return -1;
+
+  return 0;
+}
+
+
+void cd_writebuf_destroy(cd_writebuf_t* buf) {
+  free(buf->buf);
+  buf->buf = NULL;
+}
+
+int cd_writebuf_put(cd_writebuf_t* buf, char* fmt, ...) {
+  va_list ap_orig;
+  va_list ap;
+  int r;
+
+  va_start(ap_orig, fmt);
+
+  do {
+    /* Copy the vararg to retry writing in case of failure */
+    va_copy(ap, ap_orig);
+
+    r = vsnprintf(buf->buf + buf->off, buf->size - buf->off + 1, fmt, ap);
+    assert(r >= 0);
+
+    /* Whole string was written */
+    if ((unsigned int) r <= buf->size - buf->off)
+      break;
+
+    /* Free the buffer and try again */
+    cd_writebuf_flush(buf);
+
+    /* Realloc is needed */
+    if ((unsigned int) r > buf->size) {
+      char* tmp;
+
+      /* Trailing zero */
+      tmp = malloc(r + 1);
+      if (tmp == NULL)
+        return -1;
+
+      free(buf->buf);
+      buf->buf = tmp;
+      buf->size = r;
+      /* NOTE: buf->off should already be 0 */
+    }
+
+    /* Retry */
+    va_end(ap);
+  } while (1);
+
+  /* Success */
+  va_end(ap);
+  va_end(ap_orig);
+
+  buf->off += r;
+  if (buf->off == buf->size)
+    cd_writebuf_flush(buf);
+
+  return 0;
+}
+
+
+void cd_writebuf_flush(cd_writebuf_t* buf) {
+  dprintf(buf->fd, "%.*s", buf->off, buf->buf);
+  buf->off = 0;
 }

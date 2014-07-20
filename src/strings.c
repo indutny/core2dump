@@ -9,7 +9,7 @@
 
 
 static void cd_strings_print_json(cd_strings_t* strings,
-                                  int fd,
+                                  cd_writebuf_t* buf,
                                   cd_strings_item_t* item);
 
 cd_error_t cd_strings_init(cd_strings_t* strings) {
@@ -80,22 +80,22 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
 }
 
 
-void cd_strings_print(cd_strings_t* strings, int fd) {
+void cd_strings_print(cd_strings_t* strings, cd_writebuf_t* buf) {
   QUEUE* q;
 
   QUEUE_FOREACH(q, &strings->queue) {
     cd_strings_item_t* item;
 
     item = container_of(q, cd_strings_item_t, member);
-    cd_strings_print_json(strings, fd, item);
+    cd_strings_print_json(strings, buf, item);
     if (q != QUEUE_PREV(&strings->queue))
-      dprintf(fd, ", ");
+      cd_writebuf_put(buf, ", ");
   }
 }
 
 
 void cd_strings_print_json(cd_strings_t* strings,
-                           int fd,
+                           cd_writebuf_t* buf,
                            cd_strings_item_t* item) {
   int i;
   int size;
@@ -168,7 +168,7 @@ void cd_strings_print_json(cd_strings_t* strings,
     }
   }
 
-  dprintf(fd, "\"%.*s\"", size, str);
+  cd_writebuf_put(buf, "\"%.*s\"", size, str);
 
   if (str != storage)
     free(str);

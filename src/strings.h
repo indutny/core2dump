@@ -30,6 +30,6 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
                            int* index,
                            const char* str,
                            int len);
-void cd_strings_print(cd_strings_t* strings, int fd);
+void cd_strings_print(cd_strings_t* strings, cd_writebuf_t* buf);
 
 #endif  /* SRC_STRINGS_H_ */

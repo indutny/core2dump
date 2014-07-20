@@ -67,29 +67,5 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
 
 
 cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
-  cd_error_t err;
-  void* obj;
-  void** pmap;
-  void* map;
-  int type;
-
-  obj = ptr;
-
-  /* Find v8 heapobject */
-  if (!V8_IS_HEAPOBJECT(obj))
-    return cd_error(kCDErrNotObject);
-
-  V8_CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
-  map = *pmap;
-
-  /* That has a heapobject map */
-  if (!V8_IS_HEAPOBJECT(map))
-    return cd_error(kCDErrNotObject);
-
-  /* Just to verify that the object has live map */
-  err = cd_v8_get_obj_type(state, ptr, map, &type);
-  if (!cd_is_ok(err))
-    return err;
-
-  return cd_queue_ptr(state, &state->nodes.root, obj, map);
+  return cd_queue_ptr(state, &state->nodes.root, ptr, NULL);
 }
