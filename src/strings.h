@@ -16,6 +16,7 @@ struct cd_strings_s {
 
 struct cd_strings_item_s {
   QUEUE member;
+
   int index;
   int len;
   char str[1];

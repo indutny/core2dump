@@ -39,29 +39,29 @@ enum cd_edge_type_e {
 };
 
 struct cd_node_s {
-  /* Raw V8 Heap pointer */
+  QUEUE member;
+
+  /* Raw V8 stuff right from the Heap */
   void* obj;
   void* map;
+  int v8_type;
 
   cd_node_type_t type;
-  int v8_type;
   int id;
   int name;
   int size;
 
-  QUEUE member;
   QUEUE edges;
   int edge_count;
 };
 
 struct cd_edge_s {
+  QUEUE member;
+
   cd_edge_type_t type;
   cd_node_t* from;
   cd_node_t* to;
-
   int name;
-
-  QUEUE member;
 };
 
 cd_error_t cd_visitor_init(struct cd_state_s* state);
