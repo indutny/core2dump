@@ -132,6 +132,12 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
 
   type = node->v8_type;
 
+  if (cd_hashmap_get(&state->nodes.map,
+                     (const char*) &node->obj,
+                     sizeof(node->obj)) != NULL) {
+    return cd_error(kCDErrAlreadyVisited);
+  }
+
   /* Add node to the nodes list as early as possible */
   err = cd_add_node(state, node);
   if (!cd_is_ok(err))
