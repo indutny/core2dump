@@ -51,12 +51,18 @@ struct cd_node_s {
   int name;
   int size;
 
-  QUEUE edges;
-  int edge_count;
+  struct {
+    QUEUE incoming;
+    int incoming_count;
+
+    QUEUE outgoing;
+    int outgoing_count;
+  } edges;
 };
 
 struct cd_edge_s {
-  QUEUE member;
+  QUEUE in;
+  QUEUE out;
 
   cd_edge_type_t type;
   cd_node_t* from;

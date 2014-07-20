@@ -19,6 +19,7 @@ static cd_error_t cd_node_init(cd_state_t* state,
                                cd_node_t* node,
                                void* ptr,
                                void* map);
+static void cd_node_free(cd_state_t* state, cd_node_t* node);
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
@@ -37,8 +38,10 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   root->type = kCDNodeSynthetic;
   root->id = state->node_count++;
   root->size = 0;
-  QUEUE_INIT(&root->edges);
-  root->edge_count = 0;
+  QUEUE_INIT(&root->edges.incoming);
+  QUEUE_INIT(&root->edges.outgoing);
+  root->edges.incoming_count = 0;
+  root->edges.outgoing_count = 0;
 
   err = cd_strings_copy(&state->strings, &ptr, &root->name, "(GC roots)", 10);
   if (!cd_is_ok(err))
@@ -52,28 +55,37 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 
 
 void cd_visitor_destroy(cd_state_t* state) {
+  QUEUE* qn;
+
+  /* Free edges first */
+  QUEUE_FOREACH(qn, &state->nodes.list) {
+    cd_node_t* node;
+
+    node = container_of(qn, cd_node_t, member);
+
+    /* Free edges */
+    while (!QUEUE_EMPTY(&node->edges.outgoing)) {
+      QUEUE* qe;
+      cd_edge_t* edge;
+
+      qe = QUEUE_HEAD(&node->edges.outgoing);
+
+      edge = container_of(qe, cd_edge_t, out);
+      QUEUE_REMOVE(&edge->in);
+      QUEUE_REMOVE(&edge->out);
+      free(edge);
+    }
+  }
+
+  /* Free nodes */
   while (!QUEUE_EMPTY(&state->nodes.list)) {
     QUEUE* qn;
     cd_node_t* node;
 
     qn = QUEUE_HEAD(&state->nodes.list);
     QUEUE_REMOVE(qn);
-
     node = container_of(qn, cd_node_t, member);
 
-    /* Free edges */
-    while (!QUEUE_EMPTY(&node->edges)) {
-      QUEUE* qe;
-      cd_edge_t* edge;
-
-      qe = QUEUE_HEAD(&node->edges);
-      QUEUE_REMOVE(qe);
-
-      edge = container_of(qe, cd_edge_t, member);
-      free(edge);
-    }
-
-    /* Free node itself */
     if (node != &state->nodes.root)
       free(node);
   }
@@ -94,7 +106,7 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
 
     /* Node will be readded to `nodes` in case of success */
     if (!cd_is_ok(cd_visit_root(state, node)))
-      free(node);
+      cd_node_free(state, node);
   }
 
   return cd_ok();
@@ -193,10 +205,33 @@ cd_error_t cd_node_init(cd_state_t* state,
   node->map = map;
   node->id = state->node_count++;
 
-  QUEUE_INIT(&node->edges);
-  node->edge_count = 0;
+  QUEUE_INIT(&node->member);
+  QUEUE_INIT(&node->edges.incoming);
+  QUEUE_INIT(&node->edges.outgoing);
+  node->edges.incoming_count = 0;
+  node->edges.outgoing_count = 0;
 
   return cd_ok();
+}
+
+
+void cd_node_free(cd_state_t* state, cd_node_t* node) {
+  /* Dealloc all incoming edges */
+  while (!QUEUE_EMPTY(&node->edges.incoming)) {
+    QUEUE* q;
+    cd_edge_t* edge;
+
+    q = QUEUE_HEAD(&node->edges.incoming);
+
+    edge = container_of(q, cd_edge_t, in);
+    QUEUE_REMOVE(&edge->in);
+    QUEUE_REMOVE(&edge->out);
+
+    edge->from->edges.outgoing_count--;
+    free(edge);
+  }
+  QUEUE_INIT(&node->member);
+  free(node);
 }
 
 
@@ -250,7 +285,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   if (edge == NULL)
     return cd_ok();
 
-  from->edge_count++;
   edge->from = from;
   edge->to = node;
 
@@ -258,7 +292,11 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   edge->type = kCDEdgeElement;
   edge->name = 0;
 
-  QUEUE_INSERT_TAIL(&from->edges, &edge->member);
+  from->edges.outgoing_count++;
+  QUEUE_INSERT_TAIL(&from->edges.outgoing, &edge->out);
+  node->edges.incoming_count++;
+  QUEUE_INSERT_TAIL(&node->edges.incoming, &edge->in);
+
   state->edge_count++;
 
   return cd_ok();

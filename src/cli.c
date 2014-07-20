@@ -315,7 +315,7 @@ void cd_print_nodes(cd_state_t* state, cd_writebuf_t* buf) {
         node->name,
         node->id,
         node->size,
-        node->edge_count,
+        node->edges.outgoing_count,
         0);
 
     if (q != QUEUE_PREV(&state->nodes.list))
@@ -335,10 +335,10 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
     cd_node_t* node;
 
     node = container_of(nq, cd_node_t, member);
-    QUEUE_FOREACH(eq, &node->edges) {
+    QUEUE_FOREACH(eq, &node->edges.outgoing) {
       cd_edge_t* edge;
 
-      edge = container_of(eq, cd_edge_t, member);
+      edge = container_of(eq, cd_edge_t, out);
       cd_writebuf_put(
           buf,
           "    %d, %d, %d",
@@ -346,7 +346,7 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
           edge->name,
           edge->to->id * kCDNodeFieldCount);
 
-      if (eq != QUEUE_PREV(&node->edges) ||
+      if (eq != QUEUE_PREV(&node->edges.outgoing) ||
           nq != QUEUE_PREV(&state->nodes.list)) {
         cd_writebuf_put(buf, ",\n");
       } else {
