@@ -143,11 +143,6 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   if (!cd_is_ok(err))
     return err;
 
-  /* Enqueue map itself */
-  err = cd_queue_ptr(state, node, node->map, NULL);
-  if (!cd_is_ok(err))
-    return err;
-
   /* Mimique the v8's behaviour, see HeapObject::IterateBody */
 
   /* Strings... ignore for now */
@@ -157,30 +152,8 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   start = NULL;
   end = NULL;
 
-  if (type == T(Map, MAP)) {
-    int off;
-
-    /* XXX Map::kPrototypeOffset = Map::kInstanceAttributes + kIntSize */
-    off = cd_v8_class_Map__instance_attributes__int + kCDV8MapFieldOffset;
-    V8_CORE_PTR(node->obj, off, start);
-
-    /* Constructor + Prototype */
-    V8_CORE_PTR(node->obj,
-                off + cd_v8_class_Map__dependent_code__DependentCode,
-                end);
-  } else {
-    /* General object */
-    int off;
-
-    off = cd_v8_class_JSObject__properties__FixedArray;
-
-    /* Skip code entry in functions */
-    if (type == T(JSFunction, JS_FUNCTION))
-      off += state->ptr_size;
-
-    V8_CORE_PTR(node->obj, off, start);
-    V8_CORE_PTR(node->obj, off + node->size, end);
-  }
+  V8_CORE_PTR(node->obj, 0, start);
+  V8_CORE_PTR(node->obj, node->size, end);
 
   if (start != NULL && end != NULL)
     cd_queue_range(state, node, start, end);
