@@ -29,6 +29,14 @@ static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                         cd_node_t* node,
                                         char* props,
                                         int size);
+static cd_error_t cd_tag(cd_state_t* state,
+                         cd_node_t* node,
+                         void* ptr,
+                         void* map,
+                         cd_edge_type_t type,
+                         int name,
+                         const char* tag,
+                         int tag_len);
 
 
 static cd_node_t nil_node;
@@ -167,6 +175,16 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, 0, start);
   V8_CORE_PTR(node->obj, node->size, end);
 
+  /* Tag map */
+  err = cd_tag(state,
+               node,
+               node->map,
+               NULL,
+               kCDEdgeHidden,
+               0,
+               "(map)",
+               5);
+
   /* Tag properties */
   cd_tag_obj_props(state, node);
 
@@ -184,7 +202,6 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   int fast;
   void** ptr;
   char* props;
-  cd_node_t* nprops;
   int size;
 
   type = node->v8_type;
@@ -213,16 +230,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
     return err;
 
   /* Queue props to name them */
-  err = cd_queue_ptr(state, node, props, NULL, kCDEdgeHidden, 0, &nprops);
-  if (!cd_is_ok(err))
-    return err;
-  err = cd_strings_copy(&state->strings,
-                        NULL,
-                        &nprops->name,
-                        "(properties)",
-                        12);
-  if (!cd_is_ok(err))
-    return err;
+  err = cd_tag(state, node, props, NULL, kCDEdgeHidden, 0, "(properties)", 12);
 
   /* Get actual props pointer */
   V8_CORE_PTR(props, cd_v8_class_FixedArray__data__uintptr_t, ptr);
@@ -269,7 +277,14 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
     val = *(char**) (props + off + state->ptr_size);
 
     if (V8_IS_SMI(key)) {
-      cd_queue_ptr(state, node, val, NULL, kCDEdgeElement, V8_SMI(key), NULL);
+      cd_queue_ptr(state,
+                   node,
+                   val,
+                   NULL,
+                   kCDEdgeElement,
+                   V8_SMI(key),
+                   1,
+                   NULL);
       continue;
     }
 
@@ -285,10 +300,29 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
     if (!cd_is_ok(err))
       continue;
 
-    cd_queue_ptr(state, node, val, NULL, kCDEdgeProperty, key_name, NULL);
+    cd_queue_ptr(state, node, val, NULL, kCDEdgeProperty, key_name, 1, NULL);
   }
 
   return cd_ok();
+}
+
+
+cd_error_t cd_tag(cd_state_t* state,
+                  cd_node_t* node,
+                  void* ptr,
+                  void* map,
+                  cd_edge_type_t type,
+                  int name,
+                  const char* tag,
+                  int tag_len) {
+  cd_error_t err;
+  cd_node_t* to;
+
+  err = cd_queue_ptr(state, node, ptr, map, type, name, 1, &to);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_strings_copy(&state->strings, NULL, &to->name, tag, tag_len);
 }
 
 
@@ -365,6 +399,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
                         void* map,
                         cd_edge_type_t type,
                         int name,
+                        int tag,
                         cd_node_t** out) {
   cd_error_t err;
   cd_node_t* node;
@@ -422,8 +457,10 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
                             (const char*) &edge->key,
                             sizeof(edge->key));
   if (old_edge != NULL) {
-    old_edge->type = type;
-    old_edge->name = name;
+    if (tag) {
+      old_edge->type = type;
+      old_edge->name = name;
+    }
     free(edge);
     goto done;
   }
@@ -471,10 +508,10 @@ cd_error_t cd_queue_range(cd_state_t* state,
                           char* start,
                           char* end) {
   const char* cur;
-  int idx;
+  int i;
 
-  for (idx = 0, cur = start; cur < end; cur += state->ptr_size, idx++)
-    cd_queue_ptr(state, from, *(void**) cur, NULL, kCDEdgeElement, idx, NULL);
+  for (i = 0, cur = start; cur < end; cur += state->ptr_size, i++)
+    cd_queue_ptr(state,from, *(void**) cur, NULL, kCDEdgeElement, i, 0, NULL);
 
   return cd_ok();
 }

@@ -62,6 +62,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                  NULL,
                  kCDEdgeElement,
                  thread.regs.count + (off / state->ptr_size),
+                 0,
                  NULL);
   }
 
@@ -76,6 +77,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                  NULL,
                  kCDEdgeElement,
                  i,
+                 0,
                  NULL);
   }
 
