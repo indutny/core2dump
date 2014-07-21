@@ -44,7 +44,6 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   root->size = 0;
   QUEUE_INIT(&root->edges.incoming);
   QUEUE_INIT(&root->edges.outgoing);
-  root->edges.incoming_count = 0;
   root->edges.outgoing_count = 0;
   state->nodes.count++;
 
@@ -193,7 +192,6 @@ cd_error_t cd_node_init(cd_state_t* state,
   QUEUE_INIT(&node->member);
   QUEUE_INIT(&node->edges.incoming);
   QUEUE_INIT(&node->edges.outgoing);
-  node->edges.incoming_count = 0;
   node->edges.outgoing_count = 0;
 
   return cd_ok();
@@ -287,7 +285,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
   from->edges.outgoing_count++;
   QUEUE_INSERT_TAIL(&from->edges.outgoing, &edge->out);
-  node->edges.incoming_count++;
   QUEUE_INSERT_TAIL(&node->edges.incoming, &edge->in);
 
   state->edge_count++;
