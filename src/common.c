@@ -12,6 +12,13 @@ static const int kCDHashmapMaxSkip = 16;
 static const int kCDHashmapGrowRateLimit = 262144;
 
 
+static void cd_splay_destroy_rec(cd_splay_t* splay, cd_splay_node_t* node);
+static void cd_splay(cd_splay_t* splay,
+                     cd_splay_node_t** g,
+                     cd_splay_node_t** p,
+                     cd_splay_node_t** c);
+
+
 uint32_t cd_jenkins(const char* str, unsigned int len) {
   uint32_t hash;
   unsigned int i;
@@ -35,7 +42,7 @@ uint32_t cd_jenkins(const char* str, unsigned int len) {
 
 
 int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr) {
-  map->items = calloc(sizeof(*map->items), count);
+  map->items = calloc(count, sizeof(*map->items));
   if (map->items == NULL)
     return -1;
 
@@ -97,7 +104,7 @@ int cd_hashmap_insert(cd_hashmap_t* map,
     else
       grow = kCDHashmapGrowRateLimit;
 
-    nitems = calloc(sizeof(*nitems), map->count + grow);
+    nitems = calloc(map->count + grow, sizeof(*nitems));
     if (nitems == NULL)
       return -1;
 
@@ -233,4 +240,191 @@ int cd_writebuf_put(cd_writebuf_t* buf, char* fmt, ...) {
 void cd_writebuf_flush(cd_writebuf_t* buf) {
   dprintf(buf->fd, "%.*s", buf->off, buf->buf);
   buf->off = 0;
+}
+
+
+void cd_splay_init(cd_splay_t* splay, cd_splay_sort_cb sort_cb) {
+  splay->root = NULL;
+  splay->sort_cb = sort_cb;
+}
+
+
+void cd_splay_destroy_rec(cd_splay_t* splay, cd_splay_node_t* node) {
+  if (node == NULL)
+    return;
+  cd_splay_destroy_rec(splay, node->left);
+  cd_splay_destroy_rec(splay, node->right);
+  free(node);
+}
+
+
+void cd_splay_destroy(cd_splay_t* splay) {
+  cd_splay_destroy_rec(splay, splay->root);
+}
+
+
+void cd_splay(cd_splay_t* splay,
+              cd_splay_node_t** g,
+              cd_splay_node_t** p,
+              cd_splay_node_t** c) {
+  int pleft;
+  int gleft;
+  cd_splay_node_t* np;
+  cd_splay_node_t* ng;
+  cd_splay_node_t* nc;
+
+  /* c is a root now */
+  if (p == NULL || *p == NULL)
+    return;
+
+  nc = *c;
+  np = *p;
+  pleft = np->left == nc;
+
+  /* p is a root: Zig Step */
+  if (g == NULL || *g == NULL) {
+    if (pleft) {
+      np->left = nc->right;
+      nc->right = np;
+    } else {
+      np->right = nc->left;
+      nc->left = np;
+    }
+    *p = nc;
+    return;
+  }
+
+  ng = *g;
+  gleft = ng->left == np;
+
+  /* Both p and c on the same branch: Zig-Zig Step */
+  if ((pleft && gleft) || (!pleft && !gleft)) {
+    if (gleft) {
+      ng->left = np->right;
+      np->right = ng;
+      np->left = nc->right;
+      nc->right = np;
+    } else {
+      ng->right = np->left;
+      np->left = ng;
+      np->right = nc->left;
+      nc->left = np;
+    }
+    *g = nc;
+    return;
+  }
+
+  /* Zig-Zag Step */
+  if (gleft) {
+    ng->left = nc->right;
+    np->right = nc->left;
+    nc->left = np;
+    nc->right = ng;
+  } else {
+    ng->right = nc->left;
+    np->left = nc->right;
+    nc->right = np;
+    nc->left = ng;
+  }
+  *g = nc;
+}
+
+
+int cd_splay_insert(cd_splay_t* splay, void* val) {
+  /* Grand-parent */
+  cd_splay_node_t** g;
+  /* Parent */
+  cd_splay_node_t** p;
+  /* Current node */
+  cd_splay_node_t** c;
+  /* Next node */
+  cd_splay_node_t** n;
+  /* Node to insert */
+  cd_splay_node_t* node;
+
+  node = malloc(sizeof(*node));
+  if (node == NULL)
+    return -1;
+
+  node->left = NULL;
+  node->right = NULL;
+  node->value = val;
+
+  /* Traverse */
+  for (g = NULL, p = NULL, c = &splay->root; *c != NULL; g = p, p = c, c = n) {
+    int cmp;
+
+    cmp = splay->sort_cb((*c)->value, val);
+    if (cmp < 0)
+      n = &(*c)->left;
+    else if (cmp > 0)
+      n = &(*c)->right;
+    else
+      break;
+  }
+
+  /* Value is already here */
+  if (*c != NULL) {
+    free(node);
+    return -1;
+  }
+
+  /* Insert value */
+  *c = node;
+
+  cd_splay(splay, g, p, c);
+
+  return 0;
+}
+
+
+void* cd_splay_find(cd_splay_t* splay, void* val) {
+  /* Grand-grand parent */
+  cd_splay_node_t** gg;
+  /* Grand-parent */
+  cd_splay_node_t** g;
+  /* Parent */
+  cd_splay_node_t** p;
+  /* Current node */
+  cd_splay_node_t** c;
+  /* Next node */
+  cd_splay_node_t** n;
+  /* Result node */
+  cd_splay_node_t* r;
+
+  /* Traverse */
+  gg = NULL;
+  g = NULL;
+  p = NULL;
+  r = NULL;
+  for (c = &splay->root; *c != NULL; gg = g, g = p, p = c, c = n) {
+    int cmp;
+
+    cmp = splay->sort_cb((*c)->value, val);
+    if (cmp < 0) {
+      r = *c;
+      n = &r->left;
+    } else if (cmp > 0) {
+      n = &(*c)->right;
+    } else {
+      r = *c;
+      break;
+    }
+  }
+
+  /* Every node was smaller than `val` */
+  if (r == NULL)
+    return NULL;
+
+  /* Exact match */
+  if (*c != NULL) {
+    cd_splay(splay, g, p, c);
+    goto done;
+  }
+
+  /* Inexact match */
+  cd_splay(splay, gg, g, p);
+
+done:
+  return r->value;
 }

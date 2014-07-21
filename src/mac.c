@@ -14,6 +14,9 @@
 #include "common.h"
 
 
+typedef struct cd_segment_s cd_segment_t;
+
+
 struct cd_obj_s {
   void* addr;
   size_t size;
@@ -21,7 +24,24 @@ struct cd_obj_s {
   struct mach_header* header;
   cd_hashmap_t syms;
   int has_syms;
+
+  /* Ordered segments */
+  cd_segment_t* segments;
+  int segment_count;
+
+  cd_splay_t seg_splay;
 };
+
+
+struct cd_segment_s {
+  uint64_t start;
+  uint64_t end;
+
+  char* ptr;
+};
+
+
+static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
 
 
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
@@ -41,6 +61,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
   }
   obj->size = sbuf.st_size;
   obj->has_syms = 0;
+  obj->segment_count = -1;
 
   if (obj->size < sizeof(*obj->header)) {
     *err = cd_error(kCDErrNotEnoughMagic);
@@ -99,6 +120,10 @@ void cd_obj_free(cd_obj_t* obj) {
     cd_hashmap_destroy(&obj->syms);
   obj->has_syms = 0;
 
+  if (obj->segment_count != -1) {
+    free(obj->segments);
+    cd_splay_destroy(&obj->seg_splay);
+  }
   free(obj);
 }
 
@@ -139,19 +164,36 @@ int cd_obj_is_x64(cd_obj_t* obj) {
     } while (0);                                                              \
 
 
-cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
+cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
   cd_error_t err;
+  cd_segment_t* seg;
 
-  if (obj->header->filetype != MH_CORE) {
-    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
-    goto fatal;
-  }
+  if (obj->segment_count != -1)
+    return cd_ok();
 
+  cd_splay_init(&obj->seg_splay,
+                (int (*)(const void*, const void*)) cd_segment_sort);
+
+  /* Count segments */
+  obj->segment_count = 0;
+  CD_ITERATE_LCMDS({
+    if (cmd->cmd == LC_SEGMENT || cmd->cmd == LC_SEGMENT_64)
+      obj->segment_count++;
+  })
+
+  /* Allocate segments */
+  obj->segments = calloc(obj->segment_count, sizeof(*obj->segments));
+  if (obj->segments == NULL)
+    return cd_error_str(kCDErrNoMem, "cd_segment_t");
+
+  /* Fill segments */
+  seg = obj->segments;
+  int i;
+  i = 0;
   CD_ITERATE_LCMDS({
     uint64_t vmaddr;
     uint64_t vmsize;
     uint64_t fileoff;
-    char* r;
 
     if (cmd->cmd == LC_SEGMENT) {
       struct segment_command* seg;
@@ -173,24 +215,55 @@ cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
       continue;
     }
 
-    if (vmaddr > addr || vmsize + vmaddr < addr + size)
-      continue;
+    seg->start = vmaddr;
+    seg->end = vmaddr + vmsize;
+    seg->ptr = (char*) obj->addr + fileoff;
 
-    r = (char*) obj->addr + fileoff + (addr - vmaddr);
-    if (r + size > end) {
-      err = cd_error(kCDErrLoadCommandOOB);
-      goto fatal;
-    }
+    /* Fill the splay tree */
+    if (cd_splay_insert(&obj->seg_splay, seg) != 0)
+      return cd_error_str(kCDErrNoMem, "seg_splay");
 
-    *res = r;
-    return cd_ok();
+    seg++;
   })
 
-  *res = NULL;
-  err = cd_error(kCDErrNotFound);
+  return cd_ok();
 
 fatal:
   return err;
+}
+
+
+int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b) {
+  return a->start > b->start ? 1 : a->start == b->start ? 0 : -1;
+}
+
+
+cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
+  cd_error_t err;
+  cd_segment_t idx;
+  cd_segment_t* r;
+
+  if (obj->header->filetype != MH_CORE)
+    return cd_error_num(kCDErrNotCore, obj->header->filetype);
+
+  err = cd_obj_init_segments(obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (obj->segment_count == 0)
+    return cd_error(kCDErrNotFound);
+
+  idx.start = addr;
+  r = cd_splay_find(&obj->seg_splay, &idx);
+  if (r == NULL)
+    return cd_error(kCDErrNotFound);
+
+  if (addr + size > r->end)
+    return cd_error(kCDErrNotFound);
+
+  *res = r->ptr + (addr - r->start);
+
+  return cd_ok();
 }
 
 

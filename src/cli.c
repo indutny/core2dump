@@ -288,7 +288,7 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "  \"trace_tree\": [],\n");
 
   /* Print all accumulated strings */
-  cd_writebuf_put(&buf, "  \"strings\": [");
+  cd_writebuf_put(&buf, "  \"strings\": [ ");
   cd_strings_print(&state->strings, &buf);
   cd_writebuf_put(&buf, " ]\n");
   cd_writebuf_put(&buf, "}\n");

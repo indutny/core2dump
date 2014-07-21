@@ -7,6 +7,9 @@
 typedef struct cd_hashmap_s cd_hashmap_t;
 typedef struct cd_hashmap_item_s cd_hashmap_item_t;
 typedef struct cd_writebuf_s cd_writebuf_t;
+typedef struct cd_splay_s cd_splay_t;
+typedef int (*cd_splay_sort_cb)(const void*, const void*);
+typedef struct cd_splay_node_s cd_splay_node_t;
 
 struct cd_hashmap_item_s {
   const char* key;
@@ -30,6 +33,18 @@ struct cd_writebuf_s {
   char* buf;
 };
 
+struct cd_splay_s {
+  cd_splay_node_t* root;
+  cd_splay_sort_cb sort_cb;
+};
+
+struct cd_splay_node_s {
+  cd_splay_node_t* left;
+  cd_splay_node_t* right;
+
+  void* value;
+};
+
 uint32_t cd_jenkins(const char* str, unsigned int len);
 
 int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr);
@@ -48,6 +63,12 @@ void cd_writebuf_destroy(cd_writebuf_t* buf);
 
 int cd_writebuf_put(cd_writebuf_t* buf, char* fmt, ...);
 void cd_writebuf_flush(cd_writebuf_t* buf);
+
+void cd_splay_init(cd_splay_t* splay, cd_splay_sort_cb sort_cb);
+void cd_splay_destroy(cd_splay_t* splay);
+
+int cd_splay_insert(cd_splay_t* splay, void* val);
+void* cd_splay_find(cd_splay_t* splay, void* val);
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
