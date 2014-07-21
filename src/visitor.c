@@ -33,7 +33,6 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 
   QUEUE_INIT(&state->nodes.list);
 
-  state->nodes.count = 0;
   state->nodes.id = 0;
   state->edge_count = 0;
 
@@ -45,7 +44,6 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&root->edges.incoming);
   QUEUE_INIT(&root->edges.outgoing);
   root->edges.outgoing_count = 0;
-  state->nodes.count++;
 
   err = cd_strings_copy(&state->strings, &ptr, &root->name, "(GC roots)", 10);
   if (!cd_is_ok(err))
@@ -436,8 +434,6 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
     return err;
 
   QUEUE_INSERT_TAIL(&state->nodes.list, &node->member);
-
-  state->nodes.count++;
 
   return cd_ok();
 }
