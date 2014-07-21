@@ -7,8 +7,6 @@
 static const int kCDV8RegExpPattern = 1;
 static const int kCDV8MapFieldOffset = 4;
 static const int kCDV8MapFieldCount = 2;
-static const int kCDV8ObjectPropertiesPrefix = 2;
-static const int kCDV8ObjectPropertiesEntrySize = 3;
 
 #define CD_V8_CONSTANTS_ENUM(X)                                               \
     X(AsciiStringTag)                                                         \
@@ -61,6 +59,8 @@ static const int kCDV8ObjectPropertiesEntrySize = 3;
     X(class_Map__instance_attributes__int)                                    \
     X(class_Map__instance_descriptors__DescriptorArray)                       \
     X(class_Map__instance_size__int)                                          \
+    X(class_NameDictionaryShape__prefix_size__int)                            \
+    X(class_NameDictionaryShape__entry_size__int)                             \
     X(class_SeqOneByteString__chars__char)                                    \
     X(class_SeqTwoByteString__chars__char)                                    \
     X(class_SharedFunctionInfo__inferred_name__String)                        \

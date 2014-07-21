@@ -236,7 +236,6 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(props, cd_v8_class_FixedArray__data__uintptr_t, ptr);
   props = (char*) ptr;
 
-  /* TODO(indutny): support fast properties */
   if (fast)
     return cd_tag_obj_fast_props(state, node, props, size);
   else
@@ -258,16 +257,23 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                  int size) {
   cd_error_t err;
   int off;
+  int ptr_size;
+  int prefix;
+  int entry;
 
-  if (((size / state->ptr_size) - kCDV8ObjectPropertiesPrefix) %
-          kCDV8ObjectPropertiesEntrySize) {
+  prefix = cd_v8_class_NameDictionaryShape__prefix_size__int;
+  entry = cd_v8_class_NameDictionaryShape__prefix_size__int;
+
+  ptr_size = (size / state->ptr_size);
+  ptr_size -= prefix;
+  if (ptr_size % entry != 0) {
     return cd_error(kCDErrNotSoFast);
   }
 
   /* Queue each property */
-  for (off = kCDV8ObjectPropertiesPrefix * state->ptr_size;
+  for (off = prefix * state->ptr_size;
        off < size;
-       off += state->ptr_size * kCDV8ObjectPropertiesEntrySize) {
+       off += state->ptr_size * entry) {
     void* key;
     void* val;
     int key_type;
