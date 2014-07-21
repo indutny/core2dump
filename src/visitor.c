@@ -224,7 +224,9 @@ void cd_node_free(cd_state_t* state, cd_node_t* node) {
 cd_error_t cd_queue_ptr(cd_state_t* state,
                         cd_node_t* from,
                         void* ptr,
-                        void* map) {
+                        void* map,
+                        cd_edge_type_t type,
+                        int name) {
   cd_node_t* node;
   cd_edge_t* edge;
   int existing;
@@ -277,9 +279,8 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   edge->from = from;
   edge->to = node;
 
-  /* TODO(indutny) Figure out theese */
-  edge->type = kCDEdgeElement;
-  edge->name = 0;
+  edge->type = type;
+  edge->name = name;
 
   from->edges.outgoing_count++;
   QUEUE_INSERT_TAIL(&from->edges.outgoing, &edge->out);
@@ -307,9 +308,10 @@ cd_error_t cd_queue_range(cd_state_t* state,
                           char* start,
                           char* end) {
   const char* cur;
+  int idx;
 
-  for (cur = start; cur < end; cur += state->ptr_size)
-    cd_queue_ptr(state, from, *(void**) cur, NULL);
+  for (idx = 0, cur = start; cur < end; cur += state->ptr_size, idx++)
+    cd_queue_ptr(state, from, *(void**) cur, NULL, kCDEdgeElement, idx);
 
   return cd_ok();
 }

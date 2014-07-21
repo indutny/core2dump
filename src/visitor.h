@@ -76,6 +76,8 @@ cd_error_t cd_visit_roots(struct cd_state_s* state);
 cd_error_t cd_queue_ptr(struct cd_state_s* state,
                         cd_node_t* from,
                         void* ptr,
-                        void* map);
+                        void* map,
+                        cd_edge_type_t type,
+                        int name);
 
 #endif  /* SRC_VISITOR_H_ */

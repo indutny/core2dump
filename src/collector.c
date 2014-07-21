@@ -11,9 +11,6 @@
 #include <sys/types.h>
 
 
-static cd_error_t cd_collect_root(cd_state_t* state, void* ptr);
-
-
 cd_error_t cd_collector_init(cd_state_t* state) {
   QUEUE_INIT(&state->queue);
   return cd_ok();
@@ -55,17 +52,30 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
   if (!cd_is_ok(err))
     return err;
 
-  for (off = 0; off < stack_size; off += state->ptr_size)
-    cd_collect_root(state, *(void**)((char*) stack + stack_size - off));
+  for (off = 0; off < stack_size; off += state->ptr_size) {
+    void* ptr;
+
+    ptr = *(void**)((char*) stack + stack_size - off);
+    cd_queue_ptr(state,
+                 &state->nodes.root,
+                 ptr,
+                 NULL,
+                 kCDEdgeElement,
+                 thread.regs.count + (off / state->ptr_size));
+  }
 
   /* Visit registers */
-  for (i = 0; i < thread.regs.count; i++)
-    cd_collect_root(state, (void*) (intptr_t) thread.regs.values[i]);
+  for (i = 0; i < thread.regs.count; i++) {
+    void* ptr;
+
+    ptr = (void*) (intptr_t) thread.regs.values[i];
+    cd_queue_ptr(state,
+                 &state->nodes.root,
+                 ptr,
+                 NULL,
+                 kCDEdgeElement,
+                 i);
+  }
 
   return cd_ok();
-}
-
-
-cd_error_t cd_collect_root(cd_state_t* state, void* ptr) {
-  return cd_queue_ptr(state, &state->nodes.root, ptr, NULL);
 }
