@@ -49,7 +49,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
 
   obj->addr = mmap(NULL,
                    obj->size,
-                   PROT_READ | PROT_WRITE,
+                   PROT_READ,
                    MAP_FILE | MAP_PRIVATE,
                    fd,
                    0);
