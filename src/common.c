@@ -8,8 +8,8 @@
 #include "common.h"
 
 
-static const int kCDHashmapMaxSkip = 16;
-static const int kCDHashmapGrowRateLimit = 524288;
+static const int kCDHashmapMaxSkip = 64;
+static const int kCDHashmapGrowRateLimit = 1048576;
 
 
 static void cd_splay_destroy_rec(cd_splay_t* splay, cd_splay_node_t* node);
