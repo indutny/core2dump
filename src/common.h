@@ -57,6 +57,9 @@ int cd_hashmap_insert(cd_hashmap_t* map,
 void* cd_hashmap_get(cd_hashmap_t* map,
                      const char* key,
                      unsigned int key_len);
+void cd_hashmap_delete(cd_hashmap_t* map,
+                       const char* key,
+                       unsigned int key_len);
 
 int cd_writebuf_init(cd_writebuf_t* buf, int fd, unsigned int size);
 void cd_writebuf_destroy(cd_writebuf_t* buf);

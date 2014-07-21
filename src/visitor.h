@@ -63,8 +63,10 @@ struct cd_edge_s {
   QUEUE out;
 
   cd_edge_type_t type;
-  cd_node_t* from;
-  cd_node_t* to;
+  struct {
+    cd_node_t* from;
+    cd_node_t* to;
+  } key;
   int name;
 };
 

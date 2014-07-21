@@ -269,7 +269,7 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       "  },\n",
       42,
       state->nodes.id,
-      state->edge_count,
+      state->edges.count,
       0);
 
   /* Print all accumulated nodes */
@@ -353,7 +353,7 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
             "    %d, %d, %d",
             edge->type,
             edge->name,
-            edge->to->id * kCDNodeFieldCount);
+            edge->key.to->id * kCDNodeFieldCount);
       } else {
         cd_writebuf_put(
             buf,
@@ -361,10 +361,10 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
             "    %d, %d, %d",
             edge->type,
             edge->name,
-            edge->to->id * kCDNodeFieldCount,
+            edge->key.to->id * kCDNodeFieldCount,
             next->type,
             next->name,
-            next->to->id * kCDNodeFieldCount);
+            next->key.to->id * kCDNodeFieldCount);
       }
 
       if (eq != QUEUE_PREV(&node->edges.outgoing) ||

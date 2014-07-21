@@ -23,7 +23,10 @@ struct cd_state_s {
     QUEUE list;
     cd_hashmap_t map;
   } nodes;
-  int edge_count;
+  struct {
+    cd_hashmap_t map;
+    int count;
+  } edges;
 
   cd_strings_t strings;
 };

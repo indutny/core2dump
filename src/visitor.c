@@ -33,6 +33,7 @@ static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
 
 static cd_node_t nil_node;
 static const int kCDNodesInitialSize = 65536;
+static const int kCDEdgesInitialSize = 65536;
 
 
 cd_error_t cd_visitor_init(cd_state_t* state) {
@@ -42,7 +43,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&state->nodes.list);
 
   state->nodes.id = 0;
-  state->edge_count = 0;
+  state->edges.count = 0;
 
   /* Init root and insert it */
   root = &state->nodes.root;
@@ -59,6 +60,11 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
 
   if (cd_hashmap_init(&state->nodes.map, kCDNodesInitialSize, 1) != 0)
     return cd_error_str(kCDErrNoMem, "cd_hashmap_init(nodes.map)");
+
+  if (cd_hashmap_init(&state->edges.map, kCDEdgesInitialSize, 0) != 0) {
+    cd_hashmap_destroy(&state->nodes.map);
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_init(edges.map)");
+  }
 
   return cd_ok();
 }
@@ -81,6 +87,7 @@ void cd_visitor_destroy(cd_state_t* state) {
       qe = QUEUE_HEAD(&node->edges.outgoing);
 
       edge = container_of(qe, cd_edge_t, out);
+      state->edges.count--;
       QUEUE_REMOVE(&edge->in);
       QUEUE_REMOVE(&edge->out);
       free(edge);
@@ -100,6 +107,7 @@ void cd_visitor_destroy(cd_state_t* state) {
   }
 
   cd_hashmap_destroy(&state->nodes.map);
+  cd_hashmap_destroy(&state->edges.map);
 }
 
 
@@ -335,7 +343,10 @@ void cd_node_free(cd_state_t* state, cd_node_t* node) {
     QUEUE_REMOVE(&edge->in);
     QUEUE_REMOVE(&edge->out);
 
-    edge->from->edges.outgoing_count--;
+    edge->key.from->edges.outgoing_count--;
+    cd_hashmap_delete(&state->edges.map,
+                      (const char*) &edge->key,
+                      sizeof(edge->key));
     free(edge);
   }
   QUEUE_REMOVE(&node->member);
@@ -355,8 +366,10 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
                         cd_edge_type_t type,
                         int name,
                         cd_node_t** out) {
+  cd_error_t err;
   cd_node_t* node;
   cd_edge_t* edge;
+  cd_edge_t* old_edge;
   int existing;
 
   if (!V8_IS_HEAPOBJECT(ptr))
@@ -378,9 +391,8 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   if (from != NULL) {
     edge = malloc(sizeof(*edge));
     if (edge == NULL) {
-      if (!existing)
-        free(node);
-      return cd_error_str(kCDErrNoMem, "cd_edge_t");
+      err = cd_error_str(kCDErrNoMem, "cd_edge_t");
+      goto fatal;
     }
   } else {
     edge = NULL;
@@ -388,14 +400,9 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
 
   /* Initialize and queue node if just created */
   if (!existing) {
-    cd_error_t err;
-
     err = cd_node_init(state, node, ptr, map);
-    if (!cd_is_ok(err)) {
-      free(node);
-      free(edge);
-      return err;
-    }
+    if (!cd_is_ok(err))
+      goto fatal;
 
     QUEUE_INSERT_TAIL(&state->queue, &node->member);
   }
@@ -404,33 +411,58 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   if (edge == NULL)
     goto done;
 
-  edge->from = from;
-  edge->to = node;
+  edge->key.from = from;
+  edge->key.to = node;
 
   edge->type = type;
   edge->name = name;
 
+  /* Existing edge found */
+  old_edge = cd_hashmap_get(&state->edges.map,
+                            (const char*) &edge->key,
+                            sizeof(edge->key));
+  if (old_edge != NULL) {
+    old_edge->type = type;
+    old_edge->name = name;
+    free(edge);
+    goto done;
+  }
+
+  if (cd_hashmap_insert(&state->edges.map,
+                        (const char*) &edge->key,
+                        sizeof(edge->key),
+                        edge) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_edge_t hashmap insert");
+    goto fatal;
+  }
+
   from->edges.outgoing_count++;
+
   QUEUE_INSERT_TAIL(&from->edges.outgoing, &edge->out);
   QUEUE_INSERT_TAIL(&node->edges.incoming, &edge->in);
 
-  state->edge_count++;
+  state->edges.count++;
 
 done:
   if (cd_hashmap_insert(&state->nodes.map,
                         (const char*) node->obj,
                         sizeof(node->obj),
                         node) != 0) {
-    if (!existing)
-      free(node);
-    free(edge);
-    return cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
+    err = cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
+    goto fatal;
   }
 
   if (out != NULL)
     *out = node;
 
   return cd_ok();
+
+fatal:
+  if (!existing)
+    free(node);
+  free(edge);
+
+  return err;
 }
 
 

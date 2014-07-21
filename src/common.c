@@ -88,7 +88,7 @@ int cd_hashmap_insert(cd_hashmap_t* map,
       /* Equal entries - update */
       if (key_len == item->key_len &&
           (map->ptr ? item->key == key :
-                      (strncmp(item->key, key, key_len) == 0))) {
+                      (memcmp(item->key, key, key_len) == 0))) {
         break;
       }
 
@@ -157,8 +157,40 @@ void* cd_hashmap_get(cd_hashmap_t* map,
 
     if (key_len == item->key_len &&
         (map->ptr ? item->key == key :
-                    (strncmp(item->key, key, key_len) == 0))) {
+                    (memcmp(item->key, key, key_len) == 0))) {
       return item->value;
+    }
+
+    /* Move forward */
+    index = (index + 1) % map->count;
+  } while (1);
+}
+
+
+void cd_hashmap_delete(cd_hashmap_t* map,
+                       const char* key,
+                       unsigned int key_len) {
+  uint32_t index;
+
+  if (map->ptr)
+    index = cd_jenkins((const char*) &key, key_len) % map->count;
+  else
+    index = cd_jenkins(key, key_len) % map->count;
+
+  do {
+    cd_hashmap_item_t* item;
+
+    item = &map->items[index];
+
+    /* Not found */
+    if (item->key == NULL)
+      return;
+
+    if (key_len == item->key_len &&
+        (map->ptr ? item->key == key :
+                    (memcmp(item->key, key, key_len) == 0))) {
+      item->key = NULL;
+      return;
     }
 
     /* Move forward */
