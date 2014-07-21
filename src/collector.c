@@ -61,7 +61,8 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                  ptr,
                  NULL,
                  kCDEdgeElement,
-                 thread.regs.count + (off / state->ptr_size));
+                 thread.regs.count + (off / state->ptr_size),
+                 NULL);
   }
 
   /* Visit registers */
@@ -74,7 +75,8 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                  ptr,
                  NULL,
                  kCDEdgeElement,
-                 i);
+                 i,
+                 NULL);
   }
 
   return cd_ok();

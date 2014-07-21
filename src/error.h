@@ -25,7 +25,8 @@ enum cd_error_code_e {
   kCDErrUnknownObjectType = 0x11,
   kCDErrListShift = 0x12,
   kCDErrNotString = 0x13,
-  kCDErrAlreadyVisited = 0x14
+  kCDErrAlreadyVisited = 0x14,
+  kCDErrNotSoFast = 0x15
 };
 
 struct cd_error_s {

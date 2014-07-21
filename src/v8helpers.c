@@ -7,20 +7,23 @@
 #include <string.h>
 
 
+#define LAZY_MAP                                                              \
+    if (map == NULL) {                                                        \
+      void** pmap;                                                            \
+      V8_CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);               \
+      map = *pmap;                                                            \
+    }                                                                         \
+    if (!V8_IS_HEAPOBJECT(map))                                               \
+      return cd_error(kCDErrNotObject);                                       \
+
+
 cd_error_t cd_v8_get_obj_type(cd_state_t* state,
                               void* obj,
                               void* map,
                               int* type) {
   uint8_t* ptype;
 
-  if (map == NULL) {
-    void** pmap;
-    V8_CORE_PTR(obj, cd_v8_class_HeapObject__map__Map, pmap);
-    map = *pmap;
-  }
-
-  if (!V8_IS_HEAPOBJECT(map))
-    return cd_error(kCDErrNotObject);
+  LAZY_MAP
 
   /* Load object type */
   V8_CORE_PTR(map, cd_v8_class_Map__instance_attributes__int, ptype);
@@ -37,6 +40,8 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
                               int* size) {
   int instance_size;
   uint8_t* ptr;
+
+  LAZY_MAP
 
   V8_CORE_PTR(map, cd_v8_class_Map__instance_size__int, ptr);
   instance_size = *ptr;
@@ -114,13 +119,27 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
   void* name;
 
   /* Load shared function info to lookup name */
-  V8_CORE_PTR(fn,
-              cd_v8_class_JSFunction__shared__SharedFunctionInfo,
-              ptr);
+  V8_CORE_PTR(fn, cd_v8_class_JSFunction__shared__SharedFunctionInfo, ptr);
   sh = *ptr;
 
   V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
   name = *ptr;
 
   return cd_v8_to_cstr(state, name, res, index);
+}
+
+
+cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
+                                    void* obj,
+                                    void* map,
+                                    int* fast) {
+  void** ptr;
+  int bit3;
+
+  V8_CORE_PTR(map, cd_v8_class_Map__bit_field3__SMI, ptr);
+  bit3 = V8_SMI(*ptr);
+
+  *fast = (bit3 & (1 << cd_v8_bit_field3_dictionary_map_shift)) == 0;
+
+  return cd_ok();
 }

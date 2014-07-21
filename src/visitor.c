@@ -20,6 +20,15 @@ static cd_error_t cd_node_init(cd_state_t* state,
                                void* ptr,
                                void* map);
 static void cd_node_free(cd_state_t* state, cd_node_t* node);
+static cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node);
+static cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
+                                        cd_node_t* node,
+                                        char* props,
+                                        int size);
+static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
+                                        cd_node_t* node,
+                                        char* props,
+                                        int size);
 
 
 static cd_node_t nil_node;
@@ -29,7 +38,6 @@ static const int kCDNodesInitialSize = 65536;
 cd_error_t cd_visitor_init(cd_state_t* state) {
   cd_error_t err;
   cd_node_t* root;
-  const char* ptr;
 
   QUEUE_INIT(&state->nodes.list);
 
@@ -45,7 +53,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&root->edges.outgoing);
   root->edges.outgoing_count = 0;
 
-  err = cd_strings_copy(&state->strings, &ptr, &root->name, "(GC roots)", 10);
+  err = cd_strings_copy(&state->strings, NULL, &root->name, "(GC roots)", 10);
   if (!cd_is_ok(err))
     return err;
 
@@ -151,8 +159,126 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, 0, start);
   V8_CORE_PTR(node->obj, node->size, end);
 
+  /* Tag properties */
+  cd_tag_obj_props(state, node);
+
+  /* Queue all pointers */
   if (start != NULL && end != NULL)
     cd_queue_range(state, node, start, end);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
+  cd_error_t err;
+  int type;
+  int fast;
+  void** ptr;
+  char* props;
+  cd_node_t* nprops;
+  int size;
+
+  type = node->v8_type;
+  if (type != T(JSObject, JS_OBJECT) &&
+      type != T(JSValue, JS_VALUE) &&
+      type != T(JSDate, JS_DATE) &&
+      type != T(JSGlobalObject, JS_GLOBAL_OBJECT) &&
+      type != T(JSMessageObject, JS_MESSAGE_OBJECT) &&
+      type != T(JSFunction, JS_FUNCTION)) {
+    return cd_ok();
+  }
+
+  V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);
+  props = *(char**) ptr;
+
+  err = cd_v8_get_obj_size(state,
+                           props,
+                           NULL,
+                           cd_v8_type_FixedArray__FIXED_ARRAY_TYPE,
+                           &size);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_v8_obj_has_fast_props(state, node->obj, node->map, &fast);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Queue props to name them */
+  err = cd_queue_ptr(state, node, props, NULL, kCDEdgeHidden, 0, &nprops);
+  if (!cd_is_ok(err))
+    return err;
+  err = cd_strings_copy(&state->strings,
+                        NULL,
+                        &nprops->name,
+                        "(properties)",
+                        12);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Get actual props pointer */
+  V8_CORE_PTR(props, cd_v8_class_FixedArray__data__uintptr_t, ptr);
+  props = (char*) ptr;
+
+  /* TODO(indutny): support fast properties */
+  if (fast)
+    return cd_tag_obj_fast_props(state, node, props, size);
+  else
+    return cd_tag_obj_slow_props(state, node, props, size);
+}
+
+
+cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
+                                 cd_node_t* node,
+                                 char* props,
+                                 int size) {
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
+                                 cd_node_t* node,
+                                 char* props,
+                                 int size) {
+  cd_error_t err;
+  int off;
+
+  if (((size / state->ptr_size) - kCDV8ObjectPropertiesPrefix) %
+          kCDV8ObjectPropertiesEntrySize) {
+    return cd_error(kCDErrNotSoFast);
+  }
+
+  /* Queue each property */
+  for (off = kCDV8ObjectPropertiesPrefix * state->ptr_size;
+       off < size;
+       off += state->ptr_size * kCDV8ObjectPropertiesEntrySize) {
+    void* key;
+    void* val;
+    int key_type;
+    int key_name;
+
+    key = *(char**) (props + off);
+    val = *(char**) (props + off + state->ptr_size);
+
+    if (V8_IS_SMI(key)) {
+      cd_queue_ptr(state, node, val, NULL, kCDEdgeElement, V8_SMI(key), NULL);
+      continue;
+    }
+
+    err = cd_v8_get_obj_type(state, key, NULL, &key_type);
+    if (!cd_is_ok(err))
+      continue;
+
+    /* Skip non-string keys */
+    if (key_type >= cd_v8_FirstNonstringType)
+      continue;
+
+    err = cd_v8_to_cstr(state, key, NULL, &key_name);
+    if (!cd_is_ok(err))
+      continue;
+
+    cd_queue_ptr(state, node, val, NULL, kCDEdgeProperty, key_name, NULL);
+  }
 
   return cd_ok();
 }
@@ -186,6 +312,7 @@ cd_error_t cd_node_init(cd_state_t* state,
 
   node->obj = ptr;
   node->map = map;
+  node->name = 0;
 
   QUEUE_INIT(&node->member);
   QUEUE_INIT(&node->edges.incoming);
@@ -226,7 +353,8 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
                         void* ptr,
                         void* map,
                         cd_edge_type_t type,
-                        int name) {
+                        int name,
+                        cd_node_t** out) {
   cd_node_t* node;
   cd_edge_t* edge;
   int existing;
@@ -299,6 +427,9 @@ done:
     return cd_error_str(kCDErrNoMem, "cd_hashmap_insert(nodes.map)");
   }
 
+  if (out != NULL)
+    *out = node;
+
   return cd_ok();
 }
 
@@ -311,7 +442,7 @@ cd_error_t cd_queue_range(cd_state_t* state,
   int idx;
 
   for (idx = 0, cur = start; cur < end; cur += state->ptr_size, idx++)
-    cd_queue_ptr(state, from, *(void**) cur, NULL, kCDEdgeElement, idx);
+    cd_queue_ptr(state, from, *(void**) cur, NULL, kCDEdgeElement, idx, NULL);
 
   return cd_ok();
 }
@@ -319,15 +450,15 @@ cd_error_t cd_queue_range(cd_state_t* state,
 
 cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
   cd_error_t err;
-  const char* cname;
   void** ptr;
   int type;
+  int name;
 
   type = node->v8_type;
 
   /* Mimique V8HeapExplorer::AddEntry */
   if (type == T(JSFunction, JS_FUNCTION)) {
-    err = cd_v8_fn_name(state, node->obj, &cname, &node->name);
+    err = cd_v8_fn_name(state, node->obj, NULL, &name);
 
     node->type = kCDNodeClosure;
   } else if (type == T(JSRegExp, JS_REGEXP)) {
@@ -347,7 +478,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
                 ptr);
     pattern = *ptr;
 
-    err = cd_v8_to_cstr(state, pattern, &cname, &node->name);
+    err = cd_v8_to_cstr(state, pattern, NULL, &name);
 
     node->type = kCDNodeRegExp;
   } else if (type == T(JSObject, JS_OBJECT) ||
@@ -370,11 +501,11 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
       return err;
 
     if (ctype == T(JSFunction, JS_FUNCTION)) {
-      err = cd_v8_fn_name(state, cons, &cname, &node->name);
+      err = cd_v8_fn_name(state, cons, NULL, &name);
     } else {
       err = cd_strings_copy(&state->strings,
-                            &cname,
-                            &node->name,
+                            NULL,
+                            &name,
                             "Object",
                             6);
     }
@@ -387,34 +518,34 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
 
     if (repr == cd_v8_ConsStringTag) {
       err = cd_strings_copy(&state->strings,
-                            &cname,
-                            &node->name,
+                            NULL,
+                            &name,
                             "(concatenated string)",
                             21);
       node->type = kCDNodeConString;
     } else if (repr == cd_v8_SlicedStringTag) {
       err = cd_strings_copy(&state->strings,
-                            &cname,
-                            &node->name,
+                            NULL,
+                            &name,
                             "(sliced string)",
                             15);
       node->type = kCDNodeSlicedString;
     } else {
-      err = cd_v8_to_cstr(state, node->obj, &cname, &node->name);
+      err = cd_v8_to_cstr(state, node->obj, NULL, &name);
       node->type = kCDNodeString;
     }
   } else if (type == T(SharedFunctionInfo, SHARED_FUNCTION_INFO)) {
-    void* name;
+    void* sname;
 
     V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
-    name = *ptr;
+    sname = *ptr;
 
-    err = cd_v8_to_cstr(state, name, &cname, &node->name);
+    err = cd_v8_to_cstr(state, sname, NULL, &name);
     node->type = kCDNodeCode;
   } else if (type == T(HeapNumber, HEAP_NUMBER)) {
     err = cd_strings_copy(&state->strings,
-                          &cname,
-                          &node->name,
+                          NULL,
+                          &name,
                           "number",
                           6);
     node->type = kCDNodeNumber;
@@ -430,10 +561,13 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
     } else {
       node->type = kCDNodeHidden;
     }
-    err = cd_strings_copy(&state->strings, &cname, &node->name, "", 0);
+    err = cd_strings_copy(&state->strings, NULL, &name, "", 0);
   }
   if (!cd_is_ok(err))
     return err;
+
+  if (node->name == 0)
+    node->name = name;
 
   QUEUE_INSERT_TAIL(&state->nodes.list, &node->member);
 

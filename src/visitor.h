@@ -78,6 +78,7 @@ cd_error_t cd_queue_ptr(struct cd_state_s* state,
                         void* ptr,
                         void* map,
                         cd_edge_type_t type,
-                        int name);
+                        int name,
+                        cd_node_t** out);
 
 #endif  /* SRC_VISITOR_H_ */

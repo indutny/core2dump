@@ -26,6 +26,9 @@
         return err;                                                           \
     } while (0);                                                              \
 
+/* Check SMI */
+#define V8_IS_SMI(ptr) (((intptr_t) (ptr) & cd_v8_SmiTagMask) == cd_v8_SmiTag)
+
 /* Untag SMI */
 #define V8_SMI(ptr)                                                           \
     ((uint32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                    \
@@ -48,5 +51,9 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
                          void* fn,
                          const char** res,
                          int* index);
+cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
+                                    void* obj,
+                                    void* map,
+                                    int* fast);
 
 #endif  /* SRC_V8_HELPERS_H_ */

@@ -55,7 +55,8 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   item = cd_hashmap_get(&strings->map, str, len);
   if (item != NULL) {
     *index = item->index;
-    *res = item->str;
+    if (res != NULL)
+      *res = item->str;
 
     /* Return existing string */
     return cd_ok();
@@ -78,7 +79,8 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   item->index = strings->count++;
   QUEUE_INSERT_TAIL(&strings->queue, &item->member);
 
-  *res = item->str;
+  if (res != NULL)
+    *res = item->str;
   *index = item->index;
 
   return cd_ok();

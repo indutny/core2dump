@@ -7,6 +7,8 @@
 static const int kCDV8RegExpPattern = 1;
 static const int kCDV8MapFieldOffset = 4;
 static const int kCDV8MapFieldCount = 2;
+static const int kCDV8ObjectPropertiesPrefix = 2;
+static const int kCDV8ObjectPropertiesEntrySize = 3;
 
 #define CD_V8_CONSTANTS_ENUM(X)                                               \
     X(AsciiStringTag)                                                         \
@@ -51,6 +53,7 @@ static const int kCDV8MapFieldCount = 2;
     X(class_JSFunction__shared__SharedFunctionInfo)                           \
     X(class_JSMap__table__Object)                                             \
     X(class_JSObject__properties__FixedArray)                                 \
+    X(class_Map__bit_field3__SMI)                                             \
     X(class_Map__code_cache__Object)                                          \
     X(class_Map__constructor__Object)                                         \
     X(class_Map__dependent_code__DependentCode)                               \
@@ -74,6 +77,7 @@ static const int kCDV8MapFieldCount = 2;
     X(frametype_InternalFrame)                                                \
     X(frametype_JavaScriptFrame)                                              \
     X(frametype_OptimizedFrame)                                               \
+    X(bit_field3_dictionary_map_shift)                                        \
     X(off_fp_args)                                                            \
     X(off_fp_context)                                                         \
     X(off_fp_function)                                                        \
