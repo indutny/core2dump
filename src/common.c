@@ -9,7 +9,7 @@
 
 
 static const int kCDHashmapMaxSkip = 16;
-static const int kCDHashmapGrowRateLimit = 262144;
+static const int kCDHashmapGrowRateLimit = 524288;
 
 
 static void cd_splay_destroy_rec(cd_splay_t* splay, cd_splay_node_t* node);
