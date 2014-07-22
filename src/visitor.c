@@ -29,6 +29,7 @@ static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                         cd_node_t* node,
                                         char* props,
                                         int size);
+static cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node);
 static cd_error_t cd_tag_obj_property(cd_state_t* state,
                                       cd_node_t* node,
                                       void* key,
@@ -192,6 +193,9 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   /* Tag properties */
   cd_tag_obj_props(state, node);
 
+  /* Tag map properties */
+  cd_tag_map_props(state, node);
+
   /* Queue all pointers */
   if (start != NULL && end != NULL)
     cd_queue_range(state, node, start, end);
@@ -230,14 +234,10 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   /* Tag fast or slow properties */
   V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);
   cd_tag(state, node, *ptr, NULL, kCDEdgeHidden, "(properties)", 12);
+  cd_name(state, node, *ptr, NULL, kCDEdgeHidden, 0, "(properties)", 12);
   props = *(char**) ptr;
 
   err = cd_v8_obj_has_fast_props(state, node->obj, node->map, &fast);
-  if (!cd_is_ok(err))
-    return err;
-
-  /* Queue props to name them */
-  err = cd_name(state, node, props, NULL, kCDEdgeHidden, 0, "(properties)", 12);
   if (!cd_is_ok(err))
     return err;
 
@@ -339,6 +339,30 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
 
     cd_tag_obj_property(state, node, key, val);
   }
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node) {
+  void** ptr;
+
+  if (node->v8_type != T(Map, MAP))
+    return cd_ok();
+
+  V8_CORE_PTR(node->obj,
+              cd_v8_class_Map__instance_descriptors__DescriptorArray,
+              ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(map descriptors)", 17);
+
+  V8_CORE_PTR(node->obj, cd_v8_class_Map__code_cache__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(code cache)", 12);
+  V8_CORE_PTR(node->obj, cd_v8_class_Map__constructor__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(constructor)", 13);
+  V8_CORE_PTR(node->obj, cd_v8_class_Map__prototype__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(prototype)", 11);
+  V8_CORE_PTR(node->obj, cd_v8_class_Map__dependent_code__DependentCode, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(dependent code)", 16);
 
   return cd_ok();
 }
