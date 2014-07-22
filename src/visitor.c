@@ -29,6 +29,10 @@ static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                         cd_node_t* node,
                                         char* props,
                                         int size);
+static cd_error_t cd_tag_obj_property(cd_state_t* state,
+                                      cd_node_t* node,
+                                      void* key,
+                                      void* val);
 static cd_error_t cd_tag(cd_state_t* state,
                          cd_node_t* node,
                          void* ptr,
@@ -175,16 +179,6 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, 0, start);
   V8_CORE_PTR(node->obj, node->size, end);
 
-  /* Tag map */
-  err = cd_tag(state,
-               node,
-               node->map,
-               NULL,
-               kCDEdgeHidden,
-               0,
-               "(map)",
-               5);
-
   /* Tag properties */
   cd_tag_obj_props(state, node);
 
@@ -247,6 +241,7 @@ cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
   void* desc_data;
   int desc_size;
   int off;
+  int inobj;
 
   V8_CORE_PTR(node->map,
               cd_v8_class_Map__instance_descriptors__DescriptorArray,
@@ -257,23 +252,42 @@ cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
   if (!cd_is_ok(err))
     return err;
 
-
   off = cd_v8_prop_idx_first;
   if ((desc_size - off) % cd_v8_prop_desc_size != 0)
     return cd_error(kCDErrNotSoSlow);
+
+  V8_CORE_PTR(node->map, cd_v8_class_Map__inobject_properties__int, ptr);
+  inobj = *(int8_t*) ptr;
 
   for (; off < desc_size; off += cd_v8_prop_desc_size) {
     char* i;
     void* key;
     void* val;
     int det;
+    int idx;
+    int type;
 
     i = (char*) desc_data + off * state->ptr_size;
-    key = *(void**)(i + cd_v8_prop_desc_key * state->ptr_size);
-    val = *(void**)(i + cd_v8_prop_desc_value * state->ptr_size);
     det = V8_SMI(*(void**)(i + cd_v8_prop_desc_details * state->ptr_size));
 
-    fprintf(stdout, "%p %p %x\n", key, val, det);
+    type = det & cd_v8_prop_type_mask;
+    idx = (det & cd_v8_prop_index_mask) >> cd_v8_prop_index_shift;
+
+    if (type != cd_v8_prop_type_field)
+      continue;
+
+    key = *(void**)(i + cd_v8_prop_desc_key * state->ptr_size);
+    if (idx < inobj) {
+      int inobj_off;
+
+      inobj_off = node->size + (idx - inobj) * state->ptr_size;
+      V8_CORE_PTR(node->obj, inobj_off, ptr)
+      val = *ptr;
+    } else {
+      val = *(void**)(i + cd_v8_prop_desc_value * state->ptr_size);
+    }
+
+    cd_tag_obj_property(state, node, key, val);
   }
 
   return cd_ok();
@@ -284,7 +298,6 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                  cd_node_t* node,
                                  char* props,
                                  int size) {
-  cd_error_t err;
   int off;
   int prefix;
   int entry;
@@ -299,40 +312,56 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
   for (off = prefix; off < size; off += entry) {
     void* key;
     void* val;
-    int key_type;
-    int key_name;
 
     key = *(char**) (props + off * state->ptr_size);
     val = *(char**) (props + (off + 1) * state->ptr_size);
 
-    if (V8_IS_SMI(key)) {
-      cd_queue_ptr(state,
-                   node,
-                   val,
-                   NULL,
-                   kCDEdgeElement,
-                   V8_SMI(key),
-                   1,
-                   NULL);
-      continue;
-    }
-
-    err = cd_v8_get_obj_type(state, key, NULL, &key_type);
-    if (!cd_is_ok(err))
-      continue;
-
-    /* Skip non-string keys */
-    if (key_type >= cd_v8_FirstNonstringType)
-      continue;
-
-    err = cd_v8_to_cstr(state, key, NULL, &key_name);
-    if (!cd_is_ok(err))
-      continue;
-
-    cd_queue_ptr(state, node, val, NULL, kCDEdgeProperty, key_name, 1, NULL);
+    cd_tag_obj_property(state, node, key, val);
   }
 
   return cd_ok();
+}
+
+
+cd_error_t cd_tag_obj_property(cd_state_t* state,
+                               cd_node_t* node,
+                               void* key,
+                               void* val) {
+  cd_error_t err;
+  int key_type;
+  int key_name;
+
+  if (V8_IS_SMI(key)) {
+    return cd_queue_ptr(state,
+                        node,
+                        val,
+                        NULL,
+                        kCDEdgeElement,
+                        V8_SMI(key),
+                        1,
+                        NULL);
+  }
+
+  err = cd_v8_get_obj_type(state, key, NULL, &key_type);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Skip non-string object keys */
+  if (key_type >= cd_v8_FirstNonstringType)
+    return cd_ok();
+
+  err = cd_v8_to_cstr(state, key, NULL, &key_name);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_queue_ptr(state,
+                      node,
+                      val,
+                      NULL,
+                      kCDEdgeProperty,
+                      key_name,
+                      1,
+                      NULL);
 }
 
 

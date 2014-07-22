@@ -64,8 +64,7 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
     *size *= 8;
 
     /* We are returning object size, not array size */
-    *size += cd_v8_class_FixedArray__data__uintptr_t -
-             cd_v8_class_HeapObject__map__Map;
+    *size += cd_v8_class_FixedArray__data__uintptr_t;
     return cd_ok();
   }
   /* TODO(indutny) Support Code, and others */
