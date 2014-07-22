@@ -210,6 +210,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
 
   type = node->v8_type;
   if (type != T(JSObject, JS_OBJECT) &&
+      type != T(JSArray, JS_ARRAY) &&
       type != T(JSValue, JS_VALUE) &&
       type != T(JSDate, JS_DATE) &&
       type != T(JSGlobalObject, JS_GLOBAL_OBJECT) &&
@@ -221,6 +222,10 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   /* Tag prototype */
   V8_CORE_PTR(node->map, cd_v8_class_Map__prototype__Object, ptr);
   cd_tag(state, node, *ptr, NULL, kCDEdgeProperty, "(prototype)", 11);
+
+  /* Tag constructor */
+  V8_CORE_PTR(node->map, cd_v8_class_Map__constructor__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeProperty, "(constructor)", 13);
 
   /* Tag fast or slow properties */
   V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);

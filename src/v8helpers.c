@@ -61,7 +61,7 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
     if (!cd_is_ok(err))
       return err;
 
-    *size *= 8;
+    *size *= state->ptr_size;
 
     /* We are returning object size, not array size */
     *size += cd_v8_class_FixedArray__data__uintptr_t;
