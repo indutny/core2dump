@@ -676,6 +676,13 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
                           "number",
                           6);
     node->type = kCDNodeNumber;
+  } else if (type == T(Oddball, ODDBALL)) {
+    err = cd_strings_copy(&state->strings,
+                          NULL,
+                          &name,
+                          "oddball",
+                          7);
+    node->type = kCDNodeHidden;
   } else {
     if (type == T(Code, CODE)) {
       node->type = kCDNodeCode;
