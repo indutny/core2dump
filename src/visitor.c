@@ -20,6 +20,7 @@ static cd_error_t cd_node_init(cd_state_t* state,
                                void* ptr,
                                void* map);
 static void cd_node_free(cd_state_t* state, cd_node_t* node);
+
 static cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node);
 static cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
                                         cd_node_t* node,
@@ -29,6 +30,17 @@ static cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                         cd_node_t* node,
                                         char* props,
                                         int size);
+
+static cd_error_t cd_tag_obj_elems(cd_state_t* state, cd_node_t* node);
+static cd_error_t cd_tag_obj_fast_elems(cd_state_t* state,
+                                        cd_node_t* node,
+                                        char* props,
+                                        int size);
+static cd_error_t cd_tag_obj_slow_elems(cd_state_t* state,
+                                        cd_node_t* node,
+                                        char* props,
+                                        int size);
+
 static cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node);
 static cd_error_t cd_tag_obj_property(cd_state_t* state,
                                       cd_node_t* node,
@@ -193,6 +205,9 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   /* Tag properties */
   cd_tag_obj_props(state, node);
 
+  /* Tag elements */
+  cd_tag_obj_elems(state, node);
+
   /* Tag map properties */
   cd_tag_map_props(state, node);
 
@@ -215,6 +230,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   type = node->v8_type;
   if (type != T(JSObject, JS_OBJECT) &&
       type != T(JSArray, JS_ARRAY) &&
+      type != T(JSArrayBuffer, JS_ARRAY_BUFFER) &&
       type != T(JSValue, JS_VALUE) &&
       type != T(JSDate, JS_DATE) &&
       type != T(JSGlobalObject, JS_GLOBAL_OBJECT) &&
@@ -364,6 +380,99 @@ cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, cd_v8_class_Map__dependent_code__DependentCode, ptr);
   cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(dependent code)", 16);
 
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_obj_elems(cd_state_t* state, cd_node_t* node) {
+  cd_error_t err;
+  int type;
+  int fast;
+  void** ptr;
+  void* elems;
+  int size;
+
+  type = node->v8_type;
+  if (type != T(JSObject, JS_OBJECT) &&
+      type != T(JSArray, JS_ARRAY) &&
+      type != T(JSArrayBuffer, JS_ARRAY_BUFFER) &&
+      type != T(JSValue, JS_VALUE) &&
+      type != T(JSDate, JS_DATE) &&
+      type != T(JSGlobalObject, JS_GLOBAL_OBJECT) &&
+      type != T(JSMessageObject, JS_MESSAGE_OBJECT) &&
+      type != T(JSFunction, JS_FUNCTION)) {
+    return cd_ok();
+  }
+
+  /* Tag fast or slow properties */
+  V8_CORE_PTR(node->obj, cd_v8_class_JSObject__elements__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeHidden, "(elements)", 10);
+  elems = *(char**) ptr;
+
+  err = cd_v8_obj_has_fast_elems(state, node->obj, node->map, &fast);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_v8_get_fixed_arr_data(state, elems, &elems, &size);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (fast)
+    return cd_tag_obj_fast_elems(state, node, elems, size);
+  else
+    return cd_tag_obj_slow_elems(state, node, elems, size);
+}
+
+
+cd_error_t cd_tag_obj_fast_elems(cd_state_t* state,
+                                 cd_node_t* node,
+                                 char* props,
+                                 int size) {
+  int off;
+  for (off = 0; off < size; off++) {
+    cd_error_t err;
+    void* val;
+    int is_hole;
+
+    val = *(void**) (props + off * state->ptr_size);
+    err = cd_v8_is_hole(state, val, &is_hole);
+    if (!cd_is_ok(err) || is_hole)
+      continue;
+
+    cd_tag_obj_property(state, node, V8_TAG_SMI(off), val);
+  }
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_obj_slow_elems(cd_state_t* state,
+                                 cd_node_t* node,
+                                 char* props,
+                                 int size) {
+  int off;
+  int delta;
+  int entry;
+
+  entry = cd_v8_class_NumberDictionaryShape__entry_size__int;
+  delta = size % entry;
+  if (delta != 0) {
+    size -= delta;
+    props += delta * state->ptr_size;
+  }
+
+  /* Queue each property */
+  for (off = 0; off < size; off += entry) {
+    char* ptr;
+    void* key;
+    void* val;
+
+    ptr = props + off * state->ptr_size;
+
+    key = *(char**) (ptr);
+    val = *(char**) (ptr + state->ptr_size);
+
+    cd_tag_obj_property(state, node, key, val);
+  }
   return cd_ok();
 }
 

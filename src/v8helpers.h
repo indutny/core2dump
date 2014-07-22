@@ -38,6 +38,11 @@
     ((uint32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                    \
                                       cd_v8_SmiTagMask)))                     \
 
+/* Tag SMI */
+#define V8_TAG_SMI(num)                                                       \
+    ((void*) (((intptr_t) (num) << (cd_v8_SmiShiftSize + cd_v8_SmiTagMask)) | \
+        cd_v8_SmiTag))                                                        \
+
 cd_error_t cd_v8_get_obj_type(cd_state_t* state,
                               void* obj,
                               void* map,
@@ -59,10 +64,15 @@ cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
                                     void* obj,
                                     void* map,
                                     int* fast);
+cd_error_t cd_v8_obj_has_fast_elems(cd_state_t* state,
+                                    void* obj,
+                                    void* map,
+                                    int* fast);
 cd_error_t cd_v8_get_fixed_arr_len(cd_state_t* state, void* arr, int* size);
 cd_error_t cd_v8_get_fixed_arr_data(cd_state_t* state,
                                     void* arr,
                                     void** data,
                                     int* size);
+cd_error_t cd_v8_is_hole(cd_state_t* state, void* value, int* is_hole);
 
 #endif  /* SRC_V8_HELPERS_H_ */

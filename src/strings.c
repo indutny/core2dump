@@ -63,7 +63,7 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   }
 
   /* Duplicate string and insert into the list and hashmap */
-  item = malloc(sizeof(*item) + len);
+  item = malloc(sizeof(*item) + len + 1);
   if (item == NULL)
     return cd_error_str(kCDErrNoMem, "strdup failure");
   memcpy(item->str, str, len);
@@ -116,21 +116,24 @@ void cd_strings_print_json(cd_strings_t* strings,
     unsigned char c;
 
     c = (unsigned char) item->str[i];
-    /* Two-byte char, encode as \uXXXX */
-    if ((c & 0xe0) == 0xc0) {
-      size += 5;
-
     /* \" \\ \/ \b \f \r \n \t */
-    } else if (c == '"' || c == '\\' || c == '/' || c == 8 || c == 12 ||
-               c == 10 || c == 13 || c == 9) {
+    if (c == '"' || c == '\\' || c == '/' || c == 8 || c == 9 ||
+        c == 10 || c == 12 || c == 13) {
       size += 2;
+
+    /* Two-byte char, encode as \uXXXX */
+    } else if ((c & 0xe0) == 0xc0 || c < 32) {
+      if (c < 32 || i == item->len - 1)
+        size += 6;
+      else
+        size += 5;
     } else {
       size++;
     }
   }
 
   /* Allocate enough space */
-  if (size > (int) sizeof(storage))
+  if (size + 1 > (int) sizeof(storage))
     str = malloc(size + 1);
   else
     str = storage;
@@ -140,36 +143,39 @@ void cd_strings_print_json(cd_strings_t* strings,
     unsigned char c;
 
     c = (unsigned char) item->str[i];
+    /* \" \\ \/ \b \f \r \n \t */
+    if (c == '"' || c == '\\' || c == '/' || c == 8 || c == 9 ||
+        c == 10 || c == 12 || c == 13) {
+      *(ptr++) = '\\';
+      if (c == 8)
+        *(ptr++) = 'b';
+      else if (c == 9)
+        *(ptr++) = 't';
+      else if (c == 10)
+        *(ptr++) = 'n';
+      else if (c == 12)
+        *(ptr++) = 'f';
+      else if (c == 13)
+        *(ptr++) = 'r';
+      else
+        *(ptr++) = c;
     /* Two-byte char, encode as \uXXXX */
-    if ((c & 0xe0) == 0xc0) {
+    } else if ((c & 0xe0) == 0xc0 || c < 32) {
       unsigned char s;
 
       *(ptr++) = '\\';
       *(ptr++) = 'u';
 
-      if (i == item->len - 1)
-        s = 0;
-      else
-        s = (unsigned char) item->str[i++];
+      if (c < 32) {
+        ptr += sprintf(ptr, "00%02x", c);
+      } else {
+        if (i == item->len - 1)
+          s = 0;
+        else
+          s = (unsigned char) item->str[i++];
+        ptr += sprintf(ptr, "%02x%02x", c, s);
+      }
 
-      ptr += sprintf(ptr, "%.2x%.2x", c, s);
-
-    /* \" \\ \/ \b \f \r \n \t */
-    } else if (c == '"' || c == '\\' || c == '/' || c == 8 || c == 12 ||
-               c == 10 || c == 13 || c == 9) {
-      *(ptr++) = '\\';
-      if (c == 8)
-        *(ptr++) = 'b';
-      else if (c == 12)
-        *(ptr++) = 'f';
-      else if (c == 10)
-        *(ptr++) = 'r';
-      else if (c == 13)
-        *(ptr++) = 'n';
-      else if (c == 9)
-        *(ptr++) = 't';
-      else
-        *(ptr++) = c;
     } else {
       *(ptr++) = c;
     }

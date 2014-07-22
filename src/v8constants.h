@@ -20,6 +20,7 @@ static const int kCDV8MapFieldCount = 2;
     X(IsNotStringMask)                                                        \
     X(NotStringTag)                                                           \
     X(PointerSizeLog2)                                                        \
+    X(OddballTheHole)                                                         \
     X(SeqStringTag)                                                           \
     X(ConsStringTag)                                                          \
     X(SlicedStringTag)                                                        \
@@ -51,6 +52,7 @@ static const int kCDV8MapFieldCount = 2;
     X(class_JSFunction__shared__SharedFunctionInfo)                           \
     X(class_JSMap__table__Object)                                             \
     X(class_JSObject__properties__FixedArray)                                 \
+    X(class_Map__bit_field2__char)                                            \
     X(class_Map__bit_field3__SMI)                                             \
     X(class_Map__code_cache__Object)                                          \
     X(class_Map__constructor__Object)                                         \
@@ -62,6 +64,10 @@ static const int kCDV8MapFieldCount = 2;
     X(class_Map__prototype__Object)                                           \
     X(class_NameDictionaryShape__prefix_size__int)                            \
     X(class_NameDictionaryShape__entry_size__int)                             \
+    X(class_SeededNumberDictionaryShape__prefix_size__int)                    \
+    X(class_UnseededNumberDictionaryShape__prefix_size__int)                  \
+    X(class_NumberDictionaryShape__entry_size__int)                           \
+    X(class_Oddball__kind_offset__int)                                        \
     X(class_SeqOneByteString__chars__char)                                    \
     X(class_SeqTwoByteString__chars__char)                                    \
     X(class_SharedFunctionInfo__inferred_name__String)                        \
@@ -70,6 +76,9 @@ static const int kCDV8MapFieldCount = 2;
     X(class_SlicedString__offset__SMI)                                        \
     X(class_String__length__SMI)                                              \
     X(class_JSRegExp__data__Object)                                           \
+    X(elements_fast_holey_elements)                                           \
+    X(elements_fast_elements)                                                 \
+    X(elements_dictionary_elements)                                           \
     X(frametype_ArgumentsAdaptorFrame)                                        \
     X(frametype_ConstructFrame)                                               \
     X(frametype_EntryConstructFrame)                                          \
@@ -78,6 +87,8 @@ static const int kCDV8MapFieldCount = 2;
     X(frametype_InternalFrame)                                                \
     X(frametype_JavaScriptFrame)                                              \
     X(frametype_OptimizedFrame)                                               \
+    X(bit_field2_elements_kind_mask)                                          \
+    X(bit_field2_elements_kind_shift)                                         \
     X(bit_field3_dictionary_map_shift)                                        \
     X(off_fp_args)                                                            \
     X(off_fp_context)                                                         \

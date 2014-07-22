@@ -100,11 +100,14 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
   repr = type & cd_v8_StringRepresentationMask;
 
   if (encoding == cd_v8_AsciiStringTag && repr == cd_v8_SeqStringTag) {
-    V8_CORE_PTR(str, cd_v8_class_String__length__SMI, ptr);
-    length = V8_SMI(*ptr);
-
     V8_CORE_PTR(str, cd_v8_class_SeqOneByteString__chars__char, ptr);
     data = (char*) ptr;
+
+    V8_CORE_PTR(str, cd_v8_class_String__length__SMI, ptr);
+    if (!V8_IS_SMI(*ptr))
+      return cd_error(kCDErrNotString);
+
+    length = V8_SMI(*ptr);
   } else {
     data = NULL;
     length = 0;
@@ -152,6 +155,28 @@ cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
 }
 
 
+cd_error_t cd_v8_obj_has_fast_elems(cd_state_t* state,
+                                    void* obj,
+                                    void* map,
+                                    int* fast) {
+  void** ptr;
+  int bit2;
+  int kind;
+
+  V8_CORE_PTR(map, cd_v8_class_Map__bit_field2__char, ptr);
+  bit2 = *(uint8_t*) ptr;
+
+  kind = (bit2 & cd_v8_bit_field2_elements_kind_mask) >>
+      cd_v8_bit_field2_elements_kind_shift;
+  *fast = kind == cd_v8_elements_fast_elements ||
+          kind == cd_v8_elements_fast_holey_elements;
+  if (*fast == 0 && kind != cd_v8_elements_dictionary_elements)
+    return cd_error(kCDErrUnsupportedElements);
+
+  return cd_ok();
+}
+
+
 cd_error_t cd_v8_get_fixed_arr_len(cd_state_t* state, void* arr, int* size) {
   void** len;
 
@@ -181,6 +206,34 @@ cd_error_t cd_v8_get_fixed_arr_data(cd_state_t* state,
                ptr,
                *size * state->ptr_size);
   *data = ptr;
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_v8_is_hole(cd_state_t* state, void* obj, int* is_hole) {
+  cd_error_t err;
+  int type;
+  void** ptr;
+  int kind;
+
+  *is_hole = 0;
+
+  if (V8_IS_SMI(obj))
+    return cd_ok();
+
+  /* Load object type */
+  err = cd_v8_get_obj_type(state, obj, NULL, &type);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (type != CD_V8_TYPE(Oddball, ODDBALL))
+    return cd_ok();
+
+  V8_CORE_PTR(obj, cd_v8_class_Oddball__kind_offset__int, ptr);
+  kind = *(uint8_t*) ptr;
+
+  *is_hole = kind == cd_v8_OddballTheHole;
 
   return cd_ok();
 }
