@@ -26,7 +26,8 @@ enum cd_error_code_e {
   kCDErrListShift = 0x12,
   kCDErrNotString = 0x13,
   kCDErrAlreadyVisited = 0x14,
-  kCDErrNotSoFast = 0x15
+  kCDErrNotSoFast = 0x15,
+  kCDErrNotSoSlow = 0x16
 };
 
 struct cd_error_s {

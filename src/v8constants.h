@@ -91,6 +91,8 @@ static const int kCDV8MapFieldCount = 2;
     X(prop_type_field)                                                        \
     X(prop_type_first_phantom)                                                \
     X(prop_type_mask)                                                         \
+    X(prop_index_mask)                                                        \
+    X(prop_index_shift)                                                       \
     X(type_AccessorPair__ACCESSOR_PAIR_TYPE)                                  \
     X(type_AccessCheckInfo__ACCESS_CHECK_INFO_TYPE)                           \
     X(type_AliasedArgumentsEntry__ALIASED_ARGUMENTS_ENTRY_TYPE)               \

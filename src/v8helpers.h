@@ -16,11 +16,15 @@
 /* Pointer lookup in a core file */
 
 #define V8_CORE_PTR(ptr, off, out)                                            \
+    V8_CORE_DATA(ptr, off, out, state->ptr_size)                              \
+
+
+#define V8_CORE_DATA(ptr, off, out, size)                                     \
     do {                                                                      \
       cd_error_t err;                                                         \
       err = cd_obj_get(state->core,                                           \
                        (uint64_t) ((char*) V8_OBJ(ptr) + (off)),              \
-                       sizeof(*(out)),                                        \
+                       (size),                                                \
                        (void**) &(out));                                      \
       if (!cd_is_ok(err))                                                     \
         return err;                                                           \
@@ -55,5 +59,10 @@ cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
                                     void* obj,
                                     void* map,
                                     int* fast);
+cd_error_t cd_v8_get_fixed_arr_len(cd_state_t* state, void* arr, int* size);
+cd_error_t cd_v8_get_fixed_arr_data(cd_state_t* state,
+                                    void* arr,
+                                    void** data,
+                                    int* size);
 
 #endif  /* SRC_V8_HELPERS_H_ */

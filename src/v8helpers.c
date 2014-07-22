@@ -55,9 +55,17 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
   /* Variable-size */
   if (type == CD_V8_TYPE(FixedArray, FIXED_ARRAY) ||
       type == CD_V8_TYPE(FixedDoubleArray, FIXED_DOUBLE_ARRAY)) {
-    void** len;
-    V8_CORE_PTR(obj, cd_v8_class_FixedArrayBase__length__SMI, len);
-    *size = V8_SMI(*len) * state->ptr_size;
+    cd_error_t err;
+
+    err = cd_v8_get_fixed_arr_len(state, obj, size);
+    if (!cd_is_ok(err))
+      return err;
+
+    *size *= 8;
+
+    /* We are returning object size, not array size */
+    *size += cd_v8_class_FixedArray__data__uintptr_t -
+             cd_v8_class_HeapObject__map__Map;
     return cd_ok();
   }
   /* TODO(indutny) Support Code, and others */
@@ -140,6 +148,40 @@ cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
   bit3 = V8_SMI(*ptr);
 
   *fast = (bit3 & (1 << cd_v8_bit_field3_dictionary_map_shift)) == 0;
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_v8_get_fixed_arr_len(cd_state_t* state, void* arr, int* size) {
+  void** len;
+
+  /* XXX Check type, may be? */
+  V8_CORE_PTR(arr, cd_v8_class_FixedArrayBase__length__SMI, len);
+
+  /* We are returning object size, not array size */
+  *size = V8_SMI(*len);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_v8_get_fixed_arr_data(cd_state_t* state,
+                                    void* arr,
+                                    void** data,
+                                    int* size) {
+  cd_error_t err;
+  void* ptr;
+
+  err = cd_v8_get_fixed_arr_len(state, arr, size);
+  if (!cd_is_ok(err))
+    return err;
+
+  V8_CORE_DATA(arr,
+               cd_v8_class_FixedArray__data__uintptr_t,
+               ptr,
+               *size * state->ptr_size);
+  *data = ptr;
 
   return cd_ok();
 }

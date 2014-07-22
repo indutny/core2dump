@@ -201,7 +201,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   int type;
   int fast;
   void** ptr;
-  char* props;
+  void* props;
   int size;
 
   type = node->v8_type;
@@ -217,24 +217,18 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);
   props = *(char**) ptr;
 
-  err = cd_v8_get_obj_size(state,
-                           props,
-                           NULL,
-                           cd_v8_type_FixedArray__FIXED_ARRAY_TYPE,
-                           &size);
-  if (!cd_is_ok(err))
-    return err;
-
   err = cd_v8_obj_has_fast_props(state, node->obj, node->map, &fast);
   if (!cd_is_ok(err))
     return err;
 
   /* Queue props to name them */
   err = cd_tag(state, node, props, NULL, kCDEdgeHidden, 0, "(properties)", 12);
+  if (!cd_is_ok(err))
+    return err;
 
-  /* Get actual props pointer */
-  V8_CORE_PTR(props, cd_v8_class_FixedArray__data__uintptr_t, ptr);
-  props = (char*) ptr;
+  err = cd_v8_get_fixed_arr_data(state, props, &props, &size);
+  if (!cd_is_ok(err))
+    return err;
 
   if (fast)
     return cd_tag_obj_fast_props(state, node, props, size);
@@ -247,6 +241,41 @@ cd_error_t cd_tag_obj_fast_props(cd_state_t* state,
                                  cd_node_t* node,
                                  char* props,
                                  int size) {
+  cd_error_t err;
+  void** ptr;
+  void* desc_array;
+  void* desc_data;
+  int desc_size;
+  int off;
+
+  V8_CORE_PTR(node->map,
+              cd_v8_class_Map__instance_descriptors__DescriptorArray,
+              ptr);
+  desc_array = *ptr;
+
+  err = cd_v8_get_fixed_arr_data(state, desc_array, &desc_data, &desc_size);
+  if (!cd_is_ok(err))
+    return err;
+
+
+  off = cd_v8_prop_idx_first;
+  if ((desc_size - off) % cd_v8_prop_desc_size != 0)
+    return cd_error(kCDErrNotSoSlow);
+
+  for (; off < desc_size; off += cd_v8_prop_desc_size) {
+    char* i;
+    void* key;
+    void* val;
+    int det;
+
+    i = (char*) desc_data + off * state->ptr_size;
+    key = *(void**)(i + cd_v8_prop_desc_key * state->ptr_size);
+    val = *(void**)(i + cd_v8_prop_desc_value * state->ptr_size);
+    det = V8_SMI(*(void**)(i + cd_v8_prop_desc_details * state->ptr_size));
+
+    fprintf(stdout, "%p %p %x\n", key, val, det);
+  }
+
   return cd_ok();
 }
 
@@ -257,30 +286,24 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
                                  int size) {
   cd_error_t err;
   int off;
-  int ptr_size;
   int prefix;
   int entry;
 
   prefix = cd_v8_class_NameDictionaryShape__prefix_size__int;
   entry = cd_v8_class_NameDictionaryShape__prefix_size__int;
 
-  ptr_size = (size / state->ptr_size);
-  ptr_size -= prefix;
-  if (ptr_size % entry != 0) {
+  if ((size - prefix) % entry != 0)
     return cd_error(kCDErrNotSoFast);
-  }
 
   /* Queue each property */
-  for (off = prefix * state->ptr_size;
-       off < size;
-       off += state->ptr_size * entry) {
+  for (off = prefix; off < size; off += entry) {
     void* key;
     void* val;
     int key_type;
     int key_name;
 
-    key = *(char**) (props + off);
-    val = *(char**) (props + off + state->ptr_size);
+    key = *(char**) (props + off * state->ptr_size);
+    val = *(char**) (props + (off + 1) * state->ptr_size);
 
     if (V8_IS_SMI(key)) {
       cd_queue_ptr(state,
