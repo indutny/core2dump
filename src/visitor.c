@@ -229,6 +229,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
 
   /* Tag fast or slow properties */
   V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeHidden, "(properties)", 12);
   props = *(char**) ptr;
 
   err = cd_v8_obj_has_fast_props(state, node->obj, node->map, &fast);
