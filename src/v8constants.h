@@ -59,6 +59,7 @@ static const int kCDV8MapFieldCount = 2;
     X(class_Map__instance_attributes__int)                                    \
     X(class_Map__instance_descriptors__DescriptorArray)                       \
     X(class_Map__instance_size__int)                                          \
+    X(class_Map__prototype__Object)                                           \
     X(class_NameDictionaryShape__prefix_size__int)                            \
     X(class_NameDictionaryShape__entry_size__int)                             \
     X(class_SeqOneByteString__chars__char)                                    \

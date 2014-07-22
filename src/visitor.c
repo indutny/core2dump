@@ -33,12 +33,19 @@ static cd_error_t cd_tag_obj_property(cd_state_t* state,
                                       cd_node_t* node,
                                       void* key,
                                       void* val);
+static cd_error_t cd_name(cd_state_t* state,
+                          cd_node_t* node,
+                          void* ptr,
+                          void* map,
+                          cd_edge_type_t type,
+                          int name,
+                          const char* tag,
+                          int tag_len);
 static cd_error_t cd_tag(cd_state_t* state,
                          cd_node_t* node,
                          void* ptr,
                          void* map,
                          cd_edge_type_t type,
-                         int name,
                          const char* tag,
                          int tag_len);
 
@@ -179,6 +186,9 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   V8_CORE_PTR(node->obj, 0, start);
   V8_CORE_PTR(node->obj, node->size, end);
 
+  /* Tag map */
+  cd_tag(state, node, node->map, NULL, kCDEdgeInternal, "(map)", 5);
+
   /* Tag properties */
   cd_tag_obj_props(state, node);
 
@@ -208,6 +218,11 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
     return cd_ok();
   }
 
+  /* Tag prototype */
+  V8_CORE_PTR(node->map, cd_v8_class_Map__prototype__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeProperty, "(prototype)", 11);
+
+  /* Tag fast or slow properties */
   V8_CORE_PTR(node->obj, cd_v8_class_JSObject__properties__FixedArray, ptr);
   props = *(char**) ptr;
 
@@ -216,7 +231,7 @@ cd_error_t cd_tag_obj_props(cd_state_t* state, cd_node_t* node) {
     return err;
 
   /* Queue props to name them */
-  err = cd_tag(state, node, props, NULL, kCDEdgeHidden, 0, "(properties)", 12);
+  err = cd_name(state, node, props, NULL, kCDEdgeHidden, 0, "(properties)", 12);
   if (!cd_is_ok(err))
     return err;
 
@@ -365,14 +380,14 @@ cd_error_t cd_tag_obj_property(cd_state_t* state,
 }
 
 
-cd_error_t cd_tag(cd_state_t* state,
-                  cd_node_t* node,
-                  void* ptr,
-                  void* map,
-                  cd_edge_type_t type,
-                  int name,
-                  const char* tag,
-                  int tag_len) {
+cd_error_t cd_name(cd_state_t* state,
+                   cd_node_t* node,
+                   void* ptr,
+                   void* map,
+                   cd_edge_type_t type,
+                   int name,
+                   const char* tag,
+                   int tag_len) {
   cd_error_t err;
   cd_node_t* to;
 
@@ -381,6 +396,24 @@ cd_error_t cd_tag(cd_state_t* state,
     return err;
 
   return cd_strings_copy(&state->strings, NULL, &to->name, tag, tag_len);
+}
+
+
+cd_error_t cd_tag(cd_state_t* state,
+                  cd_node_t* node,
+                  void* ptr,
+                  void* map,
+                  cd_edge_type_t type,
+                  const char* tag,
+                  int tag_len) {
+  cd_error_t err;
+  int name;
+
+  err = cd_strings_copy(&state->strings, NULL, &name, tag, tag_len);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_queue_ptr(state, node, ptr, map, type, name, 1, NULL);
 }
 
 
