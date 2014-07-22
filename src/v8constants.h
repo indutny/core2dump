@@ -70,6 +70,12 @@ static const int kCDV8MapFieldCount = 2;
     X(class_Oddball__kind_offset__int)                                        \
     X(class_SeqOneByteString__chars__char)                                    \
     X(class_SeqTwoByteString__chars__char)                                    \
+    X(class_Script__source__Object)                                           \
+    X(class_Script__name__Object)                                             \
+    X(class_Script__id__Smi)                                                  \
+    X(class_Script__line_offset__SMI)                                         \
+    X(class_Script__column_offset__SMI)                                       \
+    X(class_Script__context_data__Object)                                     \
     X(class_SharedFunctionInfo__inferred_name__String)                        \
     X(class_SharedFunctionInfo__name__Object)                                 \
     X(class_SharedFunctionInfo__script__Object)                               \

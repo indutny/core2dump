@@ -339,7 +339,7 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
     break;
   })
   if (!obj->has_syms) {
-    err = cd_error(kCDErrNotFound);
+    err = cd_error_str(kCDErrNotFound, sym);
     goto fatal;
   }
 
@@ -347,7 +347,7 @@ lookup:
   assert(sizeof(void*) == sizeof(*addr));
   res = cd_hashmap_get(&obj->syms, sym, strlen(sym));
   if (res == NULL) {
-    err = cd_error(kCDErrNotFound);
+    err = cd_error_str(kCDErrNotFound, sym);
   } else {
     *addr = (uint64_t) res;
     err = cd_ok();

@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
 
   err = run(input, binary, output);
   if (!cd_is_ok(err)) {
-    fprintf(stderr, "Failed with error code: %d\n", err.code);
+    fprintf(stderr, "Failed with error:\n%s\n", cd_error_to_str(err));
     return 1;
   }
 

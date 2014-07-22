@@ -42,6 +42,13 @@ static cd_error_t cd_tag_obj_slow_elems(cd_state_t* state,
                                         int size);
 
 static cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node);
+
+static cd_error_t cd_tag_fn_props(cd_state_t* state, cd_node_t* node);
+
+static cd_error_t cd_tag_shared_props(cd_state_t* state, cd_node_t* node);
+
+static cd_error_t cd_tag_script_props(cd_state_t* state, cd_node_t* node);
+
 static cd_error_t cd_tag_obj_property(cd_state_t* state,
                                       cd_node_t* node,
                                       void* key,
@@ -211,6 +218,15 @@ cd_error_t cd_visit_root(cd_state_t* state, cd_node_t* node) {
   /* Tag map properties */
   cd_tag_map_props(state, node);
 
+  /* Tag function properties */
+  cd_tag_fn_props(state, node);
+
+  /* Tag function shared info properties */
+  cd_tag_shared_props(state, node);
+
+  /* Tag function script info properties */
+  cd_tag_script_props(state, node);
+
   /* Queue all pointers */
   if (start != NULL && end != NULL)
     cd_queue_range(state, node, start, end);
@@ -379,6 +395,58 @@ cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node) {
   cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(prototype)", 11);
   V8_CORE_PTR(node->obj, cd_v8_class_Map__dependent_code__DependentCode, ptr);
   cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(dependent code)", 16);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_fn_props(cd_state_t* state, cd_node_t* node) {
+  void** ptr;
+
+  if (node->v8_type != T(JSFunction, JS_FUNCTION))
+    return cd_ok();
+
+  /* Load shared function info to lookup name */
+  V8_CORE_PTR(node->obj,
+              cd_v8_class_JSFunction__shared__SharedFunctionInfo,
+              ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(shared)", 8);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_shared_props(cd_state_t* state, cd_node_t* node) {
+  void** ptr;
+
+  if (node->v8_type != T(SharedFunctionInfo, SHARED_FUNCTION_INFO))
+    return cd_ok();
+
+  V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "name", 4);
+  V8_CORE_PTR(node->obj,
+              cd_v8_class_SharedFunctionInfo__inferred_name__String,
+              ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "inferred name", 13);
+  V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__script__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "script", 6);
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_tag_script_props(cd_state_t* state, cd_node_t* node) {
+  void** ptr;
+
+  if (node->v8_type != T(Script, SCRIPT))
+    return cd_ok();
+
+  V8_CORE_PTR(node->obj, cd_v8_class_Script__source__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "source", 6);
+  V8_CORE_PTR(node->obj, cd_v8_class_Script__name__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "name", 4);
+  V8_CORE_PTR(node->obj, cd_v8_class_Script__context_data__Object, ptr);
+  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "context data", 12);
 
   return cd_ok();
 }
@@ -839,6 +907,13 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
     V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
     sname = *ptr;
 
+    err = cd_v8_to_cstr(state, sname, NULL, &name);
+    node->type = kCDNodeCode;
+  } else if (type == T(Script, SCRIPT)) {
+    void* sname;
+
+    V8_CORE_PTR(node->obj, cd_v8_class_Script__name__Object, ptr);
+    sname = *ptr;
     err = cd_v8_to_cstr(state, sname, NULL, &name);
     node->type = kCDNodeCode;
   } else if (type == T(HeapNumber, HEAP_NUMBER)) {
