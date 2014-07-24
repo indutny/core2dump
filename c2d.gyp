@@ -2,6 +2,7 @@
   "targets": [{
     "target_name": "core2dump",
     "type": "executable",
+    "include_dirs": [ "src" ],
     "sources": [
       "src/common.c",
       "src/collector.c",
@@ -16,11 +17,14 @@
       # Mach-O
       ["OS == 'mac'", {
         "sources": [
-          "src/mac.c",
+          "src/obj/mach.c",
         ],
       }],
       # ELF
       ["OS == 'linux'", {
+        "sources": [
+          "src/obj/elf.c",
+        ],
       }],
     ],
   }],

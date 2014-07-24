@@ -17,6 +17,8 @@ static int cd_v8_initialized;
       void* location;                                                         \
       err = cd_obj_get_sym(binary, "_v8dbg_" #V, &addr);                      \
       if (!cd_is_ok(err))                                                     \
+        err = cd_obj_get_sym(binary, "v8dbg_" #V, &addr);                     \
+      if (!cd_is_ok(err))                                                     \
         return err;                                                           \
       err = cd_obj_get(core, addr, sizeof(int), &location);                   \
       if (!cd_is_ok(err))                                                     \

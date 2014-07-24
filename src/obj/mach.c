@@ -11,37 +11,15 @@
 
 #include "error.h"
 #include "obj.h"
+#include "obj-common.h"
 #include "common.h"
 
 
-typedef struct cd_segment_s cd_segment_t;
-
-
 struct cd_obj_s {
-  void* addr;
-  size_t size;
-  int is_x64;
+  OBJ_COMMON_FIELDS
+
   struct mach_header* header;
-  cd_hashmap_t syms;
-  int has_syms;
-
-  /* Ordered segments */
-  cd_segment_t* segments;
-  int segment_count;
-
-  cd_splay_t seg_splay;
 };
-
-
-struct cd_segment_s {
-  uint64_t start;
-  uint64_t end;
-
-  char* ptr;
-};
-
-
-static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
 
 
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
@@ -188,8 +166,6 @@ cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
 
   /* Fill segments */
   seg = obj->segments;
-  int i;
-  i = 0;
   CD_ITERATE_LCMDS({
     uint64_t vmaddr;
     uint64_t vmsize;
@@ -230,11 +206,6 @@ cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
 
 fatal:
   return err;
-}
-
-
-int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b) {
-  return a->start > b->start ? 1 : a->start == b->start ? 0 : -1;
 }
 
 
@@ -352,50 +323,6 @@ lookup:
     *addr = (uint64_t) res;
     err = cd_ok();
   }
-
-fatal:
-  return err;
-}
-
-
-cd_error_t cd_obj_iterate(cd_obj_t* obj, cd_obj_iterate_cb cb, void* arg) {
-  cd_error_t err;
-
-  if (obj->header->filetype != MH_CORE) {
-    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
-    goto fatal;
-  }
-
-  CD_ITERATE_LCMDS({
-    uint64_t vmsize;
-    uint64_t fileoff;
-
-    if (cmd->cmd == LC_SEGMENT) {
-      struct segment_command* seg;
-
-      seg = (struct segment_command*) cmd;
-
-      vmsize = seg->vmsize;
-      fileoff = seg->fileoff;
-    } else if (cmd->cmd == LC_SEGMENT_64) {
-      struct segment_command_64* seg;
-
-      seg = (struct segment_command_64*) cmd;
-
-      vmsize = seg->vmsize;
-      fileoff = seg->fileoff;
-    } else {
-      continue;
-    }
-
-    err = cb(arg, (char*) obj->addr + fileoff, vmsize);
-    if (cd_is_ok(err))
-      return err;
-    else if (err.code != kCDErrNotFound)
-      return err;
-  })
-
-  err = cd_error(kCDErrNotFound);
 
 fatal:
   return err;
