@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <elf.h>
 
 #include "error.h"
@@ -32,6 +33,7 @@ struct cd_obj_s {
   Elf32_Ehdr* h32;
   const char* shstrtab;
 };
+
 
 
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
@@ -283,11 +285,34 @@ cd_error_t cd_obj_get_section(cd_obj_t* obj, const char* name, char** sect) {
 }
 
 
+#define CD_ITERATE_SECTS(prefix, postfix, spec, shared)                       \
+    do {                                                                      \
+      int i;                                                                  \
+      char* ptr;                                                              \
+      ptr = obj->addr + obj->header.e_##prefix##off;                          \
+      for (i = 0;                                                             \
+           i < obj->header.e_##prefix##num;                                   \
+           i++, ptr += obj->header.e_##prefix##entsize) {                     \
+        if (obj->is_x64) {                                                    \
+          Elf64_##postfix* sect;                                              \
+          sect = (Elf64_##postfix*) ptr;                                      \
+          spec                                                                \
+        } else {                                                              \
+          Elf32_##postfix* sect;                                              \
+          sect = (Elf32_##postfix*) ptr;                                      \
+          spec                                                                \
+        }                                                                     \
+        shared                                                                \
+      }                                                                       \
+    } while (0)                                                               \
+
+
 cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
   cd_error_t err;
-  int i;
-  char* ptr;
   char* strtab;
+  char* ent;
+  Elf64_Xword size;
+  Elf64_Xword entsize;
 
   if (obj->has_syms)
     return cd_ok();
@@ -303,34 +328,14 @@ cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
   if (!cd_is_ok(err))
     goto fatal;
 
-  ptr = obj->addr + obj->header.e_shoff;
-  for (i = 0; i < obj->header.e_shnum; i++, ptr += obj->header.e_shentsize) {
-    char* ent;
-    Elf64_Xword size;
-    Elf64_Xword entsize;
+  CD_ITERATE_SECTS(sh, Shdr, {
+    if (sect->sh_type != SHT_SYMTAB)
+      continue;
 
-    if (obj->is_x64) {
-      Elf64_Shdr* sect;
-
-      sect = (Elf64_Shdr*) ptr;
-      if (sect->sh_type != SHT_SYMTAB)
-        continue;
-
-      ent = obj->addr + sect->sh_offset;
-      size = sect->sh_size;
-      entsize = sect->sh_entsize;
-    } else {
-      Elf32_Shdr* sect;
-
-      sect = (Elf32_Shdr*) ptr;
-      if (sect->sh_type != SHT_SYMTAB)
-        continue;
-
-      ent = obj->addr + sect->sh_offset;
-      size = sect->sh_size;
-      entsize = sect->sh_entsize;
-    }
-
+    ent = obj->addr + sect->sh_offset;
+    size = sect->sh_size;
+    entsize = sect->sh_entsize;
+  }, {
     for (; size != 0; size -= entsize, ent += entsize) {
       char* name;
       int len;
@@ -356,7 +361,7 @@ cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
         goto fatal;
       }
     }
-  }
+  });
 
   return cd_ok();
 
@@ -387,14 +392,114 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
                              unsigned int index,
                              cd_obj_thread_t* thread) {
   cd_error_t err;
+  char* ent;
+  char* end;
 
   if (obj->header.e_type != ET_CORE) {
     err = cd_error_num(kCDErrNotCore, obj->header.e_type);
     goto fatal;
   }
 
+  CD_ITERATE_SECTS(ph, Phdr, {
+    if (sect->p_type != PT_NOTE)
+      continue;
+
+    ent = obj->addr + sect->p_offset;
+    end = ent + sect->p_filesz;
+  }, {
+    while (ent < end) {
+      Elf32_Word namesz;
+      Elf32_Word descsz;
+      Elf32_Word type;
+      char* desc;
+      cd_segment_t idx;
+      cd_segment_t* r;
+
+      if (obj->is_x64) {
+        Elf64_Nhdr* nhdr;
+
+        nhdr = (Elf64_Nhdr*) ent;
+        namesz = nhdr->n_namesz;
+        descsz = nhdr->n_descsz;
+        type = nhdr->n_type;
+        ent += sizeof(*nhdr);
+      } else {
+        Elf32_Nhdr* nhdr;
+
+        nhdr = (Elf32_Nhdr*) ent;
+        namesz = nhdr->n_namesz;
+        descsz = nhdr->n_descsz;
+        type = nhdr->n_type;
+        ent += sizeof(*nhdr);
+      }
+
+      /* Don't forget alignment */
+      ent += namesz;
+      if ((namesz & 3) != 0)
+        ent += 4 - (namesz & 3);
+      desc = ent;
+      if ((descsz & 3) != 0)
+        ent += 4 - (descsz & 3);
+
+      if (type != NT_PRSTATUS)
+        continue;
+
+      if (index != 0) {
+        index--;
+        continue;
+      }
+
+      if (obj->is_x64) {
+        unsigned int i;
+
+        desc += 112;
+        descsz -= 112;
+        thread->regs.count = descsz / sizeof(uint64_t);
+        for (i = 0; i < thread->regs.count; i++)
+          thread->regs.values[i] = *((uint64_t*) desc + i);
+
+        thread->stack.frame = thread->regs.values[4];
+        thread->stack.top = thread->regs.values[19];
+      } else {
+        unsigned int i;
+
+        desc += 96;
+        descsz -= 96;
+        thread->regs.count = descsz / sizeof(uint32_t);
+        for (i = 0; i < thread->regs.count; i++)
+          thread->regs.values[i] = *((uint32_t*) desc + i);
+
+        thread->stack.frame = thread->regs.values[5];
+        thread->stack.top = thread->regs.values[15];
+      }
+
+      /* Find stack start address, end of the segment */
+      err = cd_obj_init_segments(obj);
+      if (!cd_is_ok(err))
+        goto fatal;
+
+      if (obj->segment_count == 0) {
+        err = cd_error(kCDErrNotFound);
+        goto fatal;
+      }
+
+      idx.start = thread->stack.top;
+      r = cd_splay_find(&obj->seg_splay, &idx);
+      if (r == NULL) {
+        err = cd_error(kCDErrNotFound);
+        goto fatal;
+      }
+      thread->stack.bottom = r->end;
+
+      return cd_ok();
+    }
+  });
+
   err = cd_error_str(kCDErrNotFound, "thread info");
 
 fatal:
   return err;
 }
+
+
+#undef CD_ITERATE_SECTS
