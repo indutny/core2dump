@@ -9,6 +9,12 @@
 struct cd_obj_s;
 
 typedef struct cd_obj_thread_s cd_obj_thread_t;
+typedef struct cd_frame_s cd_frame_t;
+typedef struct cd_obj_s cd_obj_t;
+
+typedef cd_error_t (*cd_iterate_stack_cb)(struct cd_obj_s* obj,
+                                          cd_frame_t* frame,
+                                          void* arg);
 
 struct cd_obj_thread_s {
   struct {
@@ -26,7 +32,11 @@ struct cd_obj_thread_s {
   } stack;
 };
 
-typedef struct cd_obj_s cd_obj_t;
+struct cd_frame_s {
+  char* start;
+  char* stop;
+  uint64_t ip;
+};
 
 cd_obj_t* cd_obj_new(int fd, cd_error_t* err);
 void cd_obj_free(cd_obj_t* obj);
@@ -42,5 +52,9 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
 cd_error_t cd_obj_get_thread(cd_obj_t* obj,
                              unsigned int index,
                              cd_obj_thread_t* thread);
+cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
+                                int thread_id,
+                                cd_iterate_stack_cb cb,
+                                void* arg);
 
 #endif  /* SRC_OBJ_H_ */

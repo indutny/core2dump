@@ -10,12 +10,9 @@
 /* Forward-declarations */
 struct cd_state_s;
 
-typedef struct cd_stack_frame_s cd_stack_frame_t;
-typedef void (*cd_iterate_stack_cb)(struct cd_state_s* state,
-                                    cd_stack_frame_t* frame,
-                                    void* arg);
+typedef struct cd_js_frame_s cd_js_frame_t;
 
-struct cd_stack_frame_s {
+struct cd_js_frame_s {
   QUEUE member;
 
   char* start;
@@ -34,8 +31,5 @@ cd_error_t cd_collector_init(struct cd_state_s* state);
 void cd_collector_destroy(struct cd_state_s* state);
 
 cd_error_t cd_collect_roots(struct cd_state_s* state);
-cd_error_t cd_iterate_stack(struct cd_state_s* state,
-                            cd_iterate_stack_cb cb,
-                            void* arg);
 
 #endif  /* SRC_COLLECTOR_H_ */

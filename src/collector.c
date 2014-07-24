@@ -14,11 +14,11 @@
 #include <sys/types.h>
 
 
-static void cd_collect_frame(cd_state_t* state,
-                             cd_stack_frame_t* frame,
-                             void* arg);
+static cd_error_t cd_collect_frame(cd_obj_t* obj,
+                                   cd_frame_t* frame,
+                                   void* arg);
 static cd_error_t cd_collect_v8_frame(cd_state_t* state,
-                                      cd_stack_frame_t* frame);
+                                      cd_js_frame_t* frame);
 
 
 cd_error_t cd_collector_init(cd_state_t* state) {
@@ -43,27 +43,32 @@ void cd_collector_destroy(cd_state_t* state) {
 
   while (!QUEUE_EMPTY(&state->frames)) {
     QUEUE* q;
-    cd_stack_frame_t* frame;
+    cd_js_frame_t* frame;
 
     q = QUEUE_HEAD(&state->frames);
     QUEUE_REMOVE(q);
 
-    frame = container_of(q, cd_stack_frame_t, member);
+    frame = container_of(q, cd_js_frame_t, member);
     free(frame);
   }
 }
 
 
-void cd_collect_frame(cd_state_t* state, cd_stack_frame_t* sframe, void* arg) {
+cd_error_t cd_collect_frame(cd_obj_t* obj, cd_frame_t* sframe, void* arg) {
+  cd_state_t* state;
   cd_error_t err;
-  cd_stack_frame_t* frame;
+  cd_js_frame_t* frame;
+
+  state = (cd_state_t*) arg;
 
   frame = malloc(sizeof(*frame));
   if (frame == NULL)
-    return;
+    return cd_error_str(kCDErrNoMem, "cd_js_frame_t");
 
   /* Copy the data */
-  *frame = *sframe;
+  frame->start = sframe->start;
+  frame->stop = sframe->stop;
+  frame->ip = sframe->ip;
 
   /* Lookup C/C++ symbol if present */
   err = cd_obj_lookup_ip(state->binary,
@@ -80,13 +85,13 @@ void cd_collect_frame(cd_state_t* state, cd_stack_frame_t* sframe, void* arg) {
   err = cd_collect_v8_frame(state, frame);
   if (!cd_is_ok(err)) {
     free(frame);
-    return;
+    return cd_ok();
   }
 
 done:
   QUEUE_INSERT_TAIL(&state->frames, &frame->member);
   state->frame_count++;
-  return;
+  return cd_ok();
 }
 
 
@@ -99,7 +104,7 @@ done:
 
 
 
-cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
+cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_js_frame_t* frame) {
   cd_error_t err;
   void* ctx;
   void* marker;
@@ -218,62 +223,11 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
 
 
 cd_error_t cd_collect_roots(cd_state_t* state) {
-  return cd_iterate_stack(state, cd_collect_frame, NULL);
-}
-
-
-cd_error_t cd_iterate_stack(cd_state_t* state,
-                            cd_iterate_stack_cb cb,
-                            void* arg) {
   cd_error_t err;
-  cd_obj_thread_t thread;
-  char* stack;
-  uint64_t stack_size;
-  uint64_t frame_start;
-  uint64_t frame_end;
-  uint64_t ip;
 
   err = cd_v8_init(state->binary, state->core);
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_obj_get_thread(state->core, 0, &thread);
-  if (!cd_is_ok(err))
-    return err;
-
-  stack_size = thread.stack.bottom - thread.stack.top;
-  err = cd_obj_get(state->core,
-                   thread.stack.top,
-                   stack_size,
-                   (void**) &stack);
-  if (!cd_is_ok(err))
-    return err;
-
-  if (thread.stack.frame <= thread.stack.top)
-    return cd_error(kCDErrStackOOB);
-
-  frame_start = thread.stack.frame - thread.stack.top;
-  frame_end = 0;
-  ip = thread.regs.ip;
-  while (frame_start < stack_size) {
-    cd_stack_frame_t frame;
-
-    frame.start = stack + frame_start;
-    frame.stop = stack + frame_end;
-    frame.ip = ip;
-    cb(state, &frame, arg);
-
-    /* Next frame */
-    ip = *(uint64_t*) (stack + frame_start + state->ptr_size);
-    frame_end = frame_start;
-    frame_start = *(uint64_t*) (stack + frame_start);
-    if (frame_start <= thread.stack.top)
-      break;
-
-    frame_start -= thread.stack.top;
-    if (frame_start >= stack_size)
-      break;
-  }
-
-  return cd_error(kCDErrOk);
+  return cd_obj_iterate_stack(state->core, 0, cd_collect_frame, state);
 }

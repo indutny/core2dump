@@ -404,9 +404,9 @@ cd_error_t cd_print_trace(cd_state_t* state, cd_writebuf_t* buf) {
   QUEUE* q;
 
   QUEUE_FOREACH(q, &state->frames) {
-    cd_stack_frame_t* frame;
+    cd_js_frame_t* frame;
 
-    frame = container_of(q, cd_stack_frame_t, member);
+    frame = container_of(q, cd_js_frame_t, member);
 
     cd_writebuf_put(
         buf,
