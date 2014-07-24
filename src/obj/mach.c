@@ -16,7 +16,7 @@
 
 
 struct cd_obj_s {
-  OBJ_COMMON_FIELDS
+  CD_OBJ_COMMON_FIELDS
 
   struct mach_header* header;
 };
