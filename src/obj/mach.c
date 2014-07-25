@@ -238,12 +238,10 @@ cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
 }
 
 
-cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
+cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
+                               cd_obj_iterate_sym_cb cb,
+                               void* arg) {
   cd_error_t err;
-  void* res;
-
-  if (obj->has_syms)
-    goto lookup;
 
   CD_ITERATE_LCMDS({
     struct symtab_command* symtab;
@@ -261,12 +259,6 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       err = cd_error(kCDErrSymtabOOB);
       goto fatal;
     }
-
-    if (cd_hashmap_init(&obj->syms, symtab->nsyms * 4, 0) != 0) {
-      err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
-      goto fatal;
-    }
-    obj->has_syms = 1;
 
     if (obj->is_x64)
       nl64 = (struct nlist_64*) ((char*) obj->addr + symtab->symoff);
@@ -301,28 +293,14 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
       if (len == 0)
         continue;
 
-      if (cd_hashmap_insert(&obj->syms, name, len, (void*) value) != 0) {
-        err = cd_error_str(kCDErrNoMem, "cd_hashmap_insert");
+      err = cb(obj, name, len, value, arg);
+      if (!cd_is_ok(err))
         goto fatal;
-      }
     }
 
     break;
   })
-  if (!obj->has_syms) {
-    err = cd_error_str(kCDErrNotFound, sym);
-    goto fatal;
-  }
-
-lookup:
-  assert(sizeof(void*) == sizeof(*addr));
-  res = cd_hashmap_get(&obj->syms, sym, strlen(sym));
-  if (res == NULL) {
-    err = cd_error_str(kCDErrNotFound, sym);
-  } else {
-    *addr = (uint64_t) res;
-    err = cd_ok();
-  }
+  return cd_ok();
 
 fatal:
   return err;

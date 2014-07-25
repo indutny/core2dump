@@ -15,9 +15,6 @@
 #include "obj-common.h"
 
 
-static const int kCDSymtabInitialSize = 16384;
-
-
 static cd_error_t cd_obj_init_segments(cd_obj_t* obj);
 static cd_error_t cd_obj_init_symbols(cd_obj_t* obj);
 static cd_error_t cd_obj_get_section(cd_obj_t* obj,
@@ -307,7 +304,9 @@ cd_error_t cd_obj_get_section(cd_obj_t* obj, const char* name, char** sect) {
     } while (0)                                                               \
 
 
-cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
+cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
+                               cd_obj_iterate_sym_cb cb,
+                               void* arg) {
   cd_error_t err;
   char* strtab;
   char* ent;
@@ -316,12 +315,6 @@ cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
 
   if (obj->has_syms)
     return cd_ok();
-
-  if (cd_hashmap_init(&obj->syms, kCDSymtabInitialSize, 0) != 0) {
-    err = cd_error_str(kCDErrNoMem, "cd_hashmap_t");
-    goto fatal;
-  }
-  obj->has_syms = 1;
 
   /* Find string table */
   err = cd_obj_get_section(obj, ".strtab", &strtab);
@@ -356,10 +349,9 @@ cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
       }
 
       len = strlen(name);
-      if (cd_hashmap_insert(&obj->syms, name, len, (void*) value) != 0) {
-        err = cd_error_str(kCDErrNoMem, "cd_hashmap_insert");
+      err = cb(obj, name, len, value, arg);
+      if (!cd_is_ok(err))
         goto fatal;
-      }
     }
   });
 
@@ -367,24 +359,6 @@ cd_error_t cd_obj_init_symbols(cd_obj_t* obj) {
 
 fatal:
   return err;
-}
-
-
-cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr) {
-  cd_error_t err;
-  void* res;
-
-  err = cd_obj_init_symbols(obj);
-  if (!cd_is_ok(err))
-    return err;
-
-  assert(sizeof(void*) == sizeof(*addr));
-  res = cd_hashmap_get(&obj->syms, sym, strlen(sym));
-  if (res == NULL)
-    return cd_error_str(kCDErrNotFound, sym);
-
-  *addr = (uint64_t) res;
-  return cd_ok();
 }
 
 

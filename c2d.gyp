@@ -8,6 +8,7 @@
       "src/collector.c",
       "src/cli.c",
       "src/error.c",
+      "src/obj/obj-common.c",
       "src/strings.c",
       "src/v8constants.c",
       "src/v8helpers.c",
