@@ -44,7 +44,7 @@ cd_obj_t* cd_obj_new(cd_obj_method_t* method,
 
 cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
                         const char* path,
-                        void* opts,
+                        cd_obj_opts_t* opts,
                         cd_error_t* err) {
   cd_obj_t* res;
   int fd;
@@ -61,6 +61,14 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
     res->fd = fd;
   } else {
     close(fd);
+  }
+
+  if (opts != NULL && opts->parent != NULL) {
+    *err = cd_obj_add_dso(opts->parent, res);
+    if (!cd_is_ok(*err)) {
+      cd_obj_free(res);
+      res = NULL;
+    }
   }
 
   return res;

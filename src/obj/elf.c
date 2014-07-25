@@ -39,6 +39,10 @@ static cd_error_t cd_elf_obj_iterate_sh(cd_elf_obj_t* obj,
 static cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
                                            cd_elf_obj_iterate_notes_cb cb,
                                            void* arg);
+static cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
+                                               Elf64_Nhdr* nhdr,
+                                               char* desc,
+                                               void* arg);
 
 
 struct cd_elf_obj_s {
@@ -51,7 +55,7 @@ struct cd_elf_obj_s {
 };
 
 
-cd_elf_obj_t* cd_elf_obj_new(int fd, void* opts, cd_error_t* err) {
+cd_elf_obj_t* cd_elf_obj_new(int fd, cd_obj_opts_t* opts, cd_error_t* err) {
   cd_elf_obj_t* obj;
   struct stat sbuf;
   char* ptr;
@@ -451,12 +455,14 @@ cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
         if ((nhdr->n_namesz & 7) != 0)
           ent += 8 - (nhdr->n_namesz & 7);
         desc = ent;
+        ent += nhdr->n_descsz;
         if ((nhdr->n_descsz & 7) != 0)
           ent += 8 - (nhdr->n_descsz & 7);
       } else {
         if ((nhdr->n_namesz & 3) != 0)
           ent += 4 - (nhdr->n_namesz & 3);
         desc = ent;
+        ent += nhdr->n_descsz;
         if ((nhdr->n_descsz & 3) != 0)
           ent += 4 - (nhdr->n_descsz & 3);
       }
@@ -563,20 +569,83 @@ cd_error_t cd_elf_obj_get_thread(cd_elf_obj_t* obj,
 }
 
 
-cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj) {
-  cd_error_t err;
-  char* ent;
-  char* end;
+cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
+                                        Elf64_Nhdr* nhdr,
+                                        char* desc,
+                                        void* arg) {
+  struct {
+    uint64_t count;
+    uint64_t page_size;
+  } fhdr;
+  uint64_t i;
+  char* paths;
 
-  if (!cd_elf_obj_is_core(obj)) {
-    err = cd_error_num(kCDErrNotCore, obj->header.e_type);
-    goto fatal;
+  if (nhdr->n_type != NT_FILE)
+    return cd_ok();
+
+  /* XXX Check OOBs */
+  if (obj->is_x64) {
+    fhdr.count = ((uint64_t*) desc)[0];
+    fhdr.page_size = ((uint64_t*) desc)[1];
+    desc += 16;
+    paths = desc + 3 * fhdr.count * 8;
+  } else {
+    fhdr.count = ((uint32_t*) desc)[0];
+    fhdr.page_size = ((uint32_t*) desc)[1];
+    desc += 8;
+    paths = desc + 3 * fhdr.count * 4;
   }
 
-  err = cd_ok();
+  for (i = 0; i < fhdr.count; i++) {
+    struct {
+      uint64_t start;
+      uint64_t end;
+      uint64_t fileoff;
+      char* path;
+    } line;
+    cd_error_t err;
+    cd_obj_t* image;
+    cd_obj_opts_t opts;
 
-fatal:
-  return err;
+    if (obj->is_x64) {
+      line.start = ((uint64_t*) desc)[0];
+      line.end = ((uint64_t*) desc)[1];
+      line.fileoff = ((uint64_t*) desc)[2];
+      line.path = paths;
+      desc += 8 * 3;
+    } else {
+      line.start = ((uint32_t*) desc)[0];
+      line.end = ((uint32_t*) desc)[1];
+      line.fileoff = ((uint32_t*) desc)[2];
+      line.path = paths;
+      desc += 4 * 3;
+    }
+    paths += strlen(paths) + 1;
+    line.fileoff *= fhdr.page_size;
+
+    /* Ignore minor sections */
+    if (line.fileoff != 0)
+      continue;
+
+    opts.parent = (cd_obj_t*) obj;
+    opts.reloc = line.start;
+
+    image = cd_obj_new_ex(cd_elf_obj_method, line.path, &opts, &err);
+    if (!cd_is_ok(err))
+      continue;
+  }
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj) {
+  if (!cd_elf_obj_is_core(obj))
+    return cd_error_num(kCDErrNotCore, obj->header.e_type);
+
+  return cd_elf_obj_iterate_notes(obj,
+                                  cd_elf_obj_load_dsos_iterate,
+                                  NULL);
 }
 
 

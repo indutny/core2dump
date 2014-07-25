@@ -14,6 +14,7 @@ struct cd_obj_s;
 typedef struct cd_obj_method_s cd_obj_method_t;
 typedef struct cd_segment_s cd_segment_t;
 typedef struct cd_sym_s cd_sym_t;
+typedef struct cd_obj_opts_s cd_obj_opts_t;
 
 typedef cd_error_t (*cd_obj_iterate_sym_cb)(struct cd_obj_s* obj,
                                             cd_sym_t* sym,
@@ -24,7 +25,7 @@ typedef cd_error_t (*cd_obj_iterate_seg_cb)(struct cd_obj_s* obj,
 
 /* Method types */
 typedef struct cd_obj_s* (*cd_obj_method_new_t)(int fd,
-                                                void* opts,
+                                                cd_obj_opts_t* opts,
                                                 cd_error_t* err);
 typedef void (*cd_obj_method_free_t)(struct cd_obj_s* obj);
 typedef int (*cd_obj_method_is_core_t)(struct cd_obj_s* obj);
@@ -79,9 +80,15 @@ struct cd_sym_s {
   uint64_t sect;
 };
 
+struct cd_obj_opts_s {
+  struct cd_obj_s* parent;
+  uint64_t reloc;
+};
+
+
 struct cd_obj_s* cd_obj_new_ex(cd_obj_method_t* method,
                                const char* path,
-                               void* opts,
+                               cd_obj_opts_t* opts,
                                cd_error_t* err);
 cd_error_t cd_obj_internal_init(struct cd_obj_s* obj);
 void cd_obj_internal_free(struct cd_obj_s* obj);

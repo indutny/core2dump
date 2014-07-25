@@ -19,7 +19,6 @@
 #include "common.h"
 
 typedef struct cd_mach_obj_s cd_mach_obj_t;
-typedef struct cd_mach_opts_s cd_mach_opts_t;
 typedef struct cd_mach_dyld_infos_s cd_mach_dyld_infos_t;
 typedef struct cd_mach_dyld_infos32_s cd_mach_dyld_infos32_t;
 typedef struct cd_mach_dyld_image_s cd_mach_dyld_image_t;
@@ -98,18 +97,13 @@ struct cd_mach_obj_s {
 };
 
 
-struct cd_mach_opts_s {
-  cd_mach_obj_t* parent;
-  uint64_t reloc;
-};
-
-static cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts);
+static cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_obj_opts_t* opts);
 static cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj);
 static cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj,
                                             cd_segment_t* seg);
 static cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj);
 static cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj,
-                                        cd_mach_opts_t* opts);
+                                        cd_obj_opts_t* opts);
 static cd_error_t cd_mach_obj_iterate_lcmds(cd_mach_obj_t* obj,
                                             struct mach_header* hdr,
                                             size_t size,
@@ -129,7 +123,7 @@ static cd_error_t cd_mach_obj_locate_iterate(cd_mach_obj_t* obj,
                                              void* arg);
 
 
-cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
+cd_mach_obj_t* cd_mach_obj_new(int fd, cd_obj_opts_t* opts, cd_error_t* err) {
   cd_mach_obj_t* obj;
   struct stat sbuf;
 
@@ -204,13 +198,8 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
   if (!cd_is_ok(*err))
     goto failed_magic2;
 
-  /* Link DSOs */
-  if (opts != NULL) {
+  if (opts != NULL && opts.reloc != 0) {
     *err = cd_mach_obj_init_aslr(obj, opts);
-    if (!cd_is_ok(*err))
-      goto failed_magic2;
-
-    *err = cd_obj_add_dso((cd_obj_t*) opts->parent, (cd_obj_t*) obj);
     if (!cd_is_ok(*err))
       goto failed_magic2;
   }
@@ -242,7 +231,7 @@ void cd_mach_obj_free(cd_mach_obj_t* obj) {
 }
 
 
-cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
+cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj, cd_obj_opts_t* opts) {
   cd_error_t err;
   int i;
 
@@ -269,7 +258,7 @@ cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
 }
 
 
-cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
+cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_obj_opts_t* opts) {
   struct fat_header* fat;
   int swap;
   uint32_t nfat_arch;
@@ -712,7 +701,7 @@ cd_error_t cd_mach_obj_locate_iterate(cd_mach_obj_t* obj,
 
 cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
   cd_error_t err;
-  cd_mach_opts_t opts;
+  cd_obj_opts_t opts;
 
   obj->dyld = NULL;
   obj->dyld_path = NULL;
@@ -744,7 +733,7 @@ cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
     goto fatal;
   }
 
-  opts.parent = obj;
+  opts.parent = (cd_obj_t*) obj;
   opts.reloc = obj->dyld_off;
   obj->dyld_obj = cd_obj_new_ex(cd_mach_obj_method,
                                 obj->dyld_path,
@@ -835,7 +824,7 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     uint64_t path;
     char* cpath;
     cd_obj_t* image;
-    cd_mach_opts_t opts;
+    cd_obj_opts_t opts;
 
     if (obj->is_x64) {
       cd_mach_dyld_image_t* image;
@@ -858,7 +847,7 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     if (!cd_is_ok(err))
       return err;
 
-    opts.parent = obj;
+    opts.parent = (cd_obj_t*) obj;
     opts.reloc = addr;
     image = cd_obj_new_ex(cd_mach_obj_method, cpath, &opts, &err);
     /* Ignore errors */
