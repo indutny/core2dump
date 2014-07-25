@@ -402,6 +402,7 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
         thread->regs.values[19] = state->uts.ts64.__fs;
         thread->regs.values[20] = state->uts.ts64.__gs;
 
+        thread->regs.ip = state->uts.ts64.__rip;
         thread->stack.top = state->uts.ts64.__rsp;
         thread->stack.frame = state->uts.ts64.__rbp;
         thread->stack.bottom = 0x7fff5fc00000LL;
@@ -424,6 +425,7 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
         thread->regs.values[14] = state->uts.ts32.__fs;
         thread->regs.values[15] = state->uts.ts32.__gs;
 
+        thread->regs.ip = state->uts.ts32.__eip;
         thread->stack.top = state->uts.ts32.__esp;
         thread->stack.frame = state->uts.ts32.__ebp;
         thread->stack.bottom = 0xc0000000;

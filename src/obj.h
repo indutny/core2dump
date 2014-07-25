@@ -15,6 +15,8 @@ struct cd_obj_thread_s {
     unsigned int count;
     /* XXX Support variable register count? */
     uint64_t values[32];
+
+    uint64_t ip;
   } regs;
 
   struct {

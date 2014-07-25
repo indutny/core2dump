@@ -48,7 +48,7 @@ cd_error_t cd_error_str(cd_error_code_t code, const char* str) {
 }
 
 
-#define CD_ERROR_TO_STR(X, Y) case kCD##X: name = #X; break;
+#define CD_ERROR_TO_STR(X, Y) case kCDErr##X: name = #X; break;
 
 
 const char* cd_error_to_str(cd_error_t err) {

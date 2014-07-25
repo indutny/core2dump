@@ -7,7 +7,9 @@
 #include "v8helpers.h"
 #include "visitor.h"
 
+#include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/types.h>
 
 
@@ -35,7 +37,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
   cd_error_t err;
   uint64_t off;
   void* stack;
-  size_t stack_size;
+  uint64_t stack_size;
   unsigned int i;
   cd_obj_thread_t thread;
 
@@ -82,4 +84,56 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
   }
 
   return cd_ok();
+}
+
+
+cd_error_t cd_iterate_stack(cd_state_t* state,
+                            cd_iterate_stack_cb cb,
+                            void* arg) {
+  cd_error_t err;
+  cd_obj_thread_t thread;
+  char* stack;
+  uint64_t stack_size;
+  uint64_t frame_start;
+  uint64_t frame_end;
+  uint64_t ip;
+
+  err = cd_v8_init(state->binary, state->core);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_obj_get_thread(state->core, 0, &thread);
+  if (!cd_is_ok(err))
+    return err;
+
+  stack_size = thread.stack.bottom - thread.stack.top;
+  err = cd_obj_get(state->core,
+                   thread.stack.top,
+                   stack_size,
+                   (void**) &stack);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (thread.stack.frame <= thread.stack.top)
+    return cd_error(kCDErrStackOOB);
+
+  frame_start = thread.stack.frame - thread.stack.top;
+  frame_end = 0;
+  ip = thread.regs.ip;
+  while (frame_start < stack_size) {
+    cb(stack + frame_start, stack + frame_end, ip, arg);
+
+    /* Next frame */
+    ip = *(uint64_t*) (stack + frame_start + state->ptr_size);
+    frame_end = frame_start;
+    frame_start = *(uint64_t*) (stack + frame_start);
+    if (frame_start <= thread.stack.top)
+      break;
+
+    frame_start -= thread.stack.top;
+    if (frame_start >= stack_size)
+      break;
+  }
+
+  return cd_error(kCDErrNotFound);
 }

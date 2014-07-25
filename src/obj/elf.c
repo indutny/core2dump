@@ -458,6 +458,7 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
         for (i = 0; i < thread->regs.count; i++)
           thread->regs.values[i] = *((uint64_t*) desc + i);
 
+        thread->regs.ip = thread->regs.values[16];
         thread->stack.frame = thread->regs.values[4];
         thread->stack.top = thread->regs.values[19];
       } else {
@@ -469,6 +470,7 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
         for (i = 0; i < thread->regs.count; i++)
           thread->regs.values[i] = *((uint32_t*) desc + i);
 
+        thread->regs.ip = thread->regs.values[12];
         thread->stack.frame = thread->regs.values[5];
         thread->stack.top = thread->regs.values[15];
       }
