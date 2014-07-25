@@ -21,10 +21,24 @@
 
 typedef struct cd_elf_obj_s cd_elf_obj_t;
 
+typedef cd_error_t (*cd_elf_obj_iterate_sh_cb)(cd_elf_obj_t* obj,
+                                               Elf64_Shdr* shdr,
+                                               void* arg);
+typedef cd_error_t (*cd_elf_obj_iterate_notes_cb)(cd_elf_obj_t* obj,
+                                                  Elf64_Nhdr* nhdr,
+                                                  char* desc,
+                                                  void* arg);
+
 static cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
                                          const char* name,
                                          char** sect);
 static cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj);
+static cd_error_t cd_elf_obj_iterate_sh(cd_elf_obj_t* obj,
+                                        cd_elf_obj_iterate_sh_cb cb,
+                                        void* arg);
+static cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
+                                           cd_elf_obj_iterate_notes_cb cb,
+                                           void* arg);
 
 
 struct cd_elf_obj_s {
@@ -252,215 +266,300 @@ cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
 }
 
 
-#define CD_ITERATE_SECTS(prefix, postfix, spec, shared)                       \
-    do {                                                                      \
-      int i;                                                                  \
-      char* ptr;                                                              \
-      ptr = obj->addr + obj->header.e_##prefix##off;                          \
-      for (i = 0;                                                             \
-           i < obj->header.e_##prefix##num;                                   \
-           i++, ptr += obj->header.e_##prefix##entsize) {                     \
-        if (obj->is_x64) {                                                    \
-          Elf64_##postfix* sect;                                              \
-          sect = (Elf64_##postfix*) ptr;                                      \
-          spec                                                                \
-        } else {                                                              \
-          Elf32_##postfix* sect;                                              \
-          sect = (Elf32_##postfix*) ptr;                                      \
-          spec                                                                \
-        }                                                                     \
-        shared                                                                \
-      }                                                                       \
-    } while (0)                                                               \
+cd_error_t cd_elf_obj_iterate_sh(cd_elf_obj_t* obj,
+                                 cd_elf_obj_iterate_sh_cb cb,
+                                 void* arg) {
+  cd_error_t err;
+  int i;
+  char* ptr;
+
+  ptr = obj->addr + obj->header.e_shoff;
+  for (i = 0; i < obj->header.e_shnum; i++, ptr += obj->header.e_shentsize) {
+    if (obj->is_x64) {
+      Elf64_Shdr* shdr;
+
+      shdr = (Elf64_Shdr*) ptr;
+      err = cb(obj, shdr, arg);
+      if (!cd_is_ok(err))
+        return err;
+    } else {
+      Elf64_Shdr shdr;
+      Elf32_Shdr* shdr32;
+
+      shdr32 = (Elf32_Shdr*) ptr;
+
+      shdr.sh_name = shdr32->sh_name;
+      shdr.sh_type = shdr32->sh_type;
+      shdr.sh_flags = shdr32->sh_flags;
+      shdr.sh_addr = shdr32->sh_addr;
+      shdr.sh_offset = shdr32->sh_offset;
+      shdr.sh_size = shdr32->sh_size;
+      shdr.sh_link = shdr32->sh_link;
+      shdr.sh_info = shdr32->sh_info;
+      shdr.sh_addralign = shdr32->sh_addralign;
+      shdr.sh_entsize = shdr32->sh_entsize;
+
+      err = cb(obj, &shdr, arg);
+      if (!cd_is_ok(err))
+        return err;
+    }
+  }
+
+  return cd_ok();
+}
+
+
+typedef struct cd_elf_obj_iterate_syms_s cd_elf_obj_iterate_syms_t;
+
+struct cd_elf_obj_iterate_syms_s {
+  char* strtab;
+  cd_obj_iterate_sym_cb cb;
+  void* arg;
+};
+
+
+cd_error_t cd_elf_obj_iterate_syms_sh(cd_elf_obj_t* obj,
+                                      Elf64_Shdr* shdr,
+                                      void* arg) {
+  cd_error_t err;
+  char* ent;
+  Elf64_Xword size;
+  Elf64_Xword entsize;
+  cd_elf_obj_iterate_syms_t* st;
+
+  if (shdr->sh_type != SHT_SYMTAB)
+    return cd_ok();
+
+  st = (cd_elf_obj_iterate_syms_t*) arg;
+
+  ent = obj->addr + shdr->sh_offset;
+  size = shdr->sh_size;
+  entsize = shdr->sh_entsize;
+
+  for (; size != 0; size -= entsize, ent += entsize) {
+    char* name;
+    uint64_t value;
+    cd_sym_t sym;
+
+    if (obj->is_x64) {
+      Elf64_Sym* sym;
+
+      sym = (Elf64_Sym*) ent;
+      name = st->strtab + sym->st_name;
+      value = sym->st_value;
+    } else {
+      Elf32_Sym* sym;
+
+      sym = (Elf32_Sym*) ent;
+      name = st->strtab + sym->st_name;
+      value = sym->st_value;
+    }
+
+    sym.name = name;
+    sym.nlen = strlen(name);
+    sym.value = value;
+
+    err = st->cb((cd_obj_t*) obj, &sym, st->arg);
+    if (!cd_is_ok(err))
+      return err;
+  }
+
+  return cd_ok();
+}
 
 
 cd_error_t cd_elf_obj_iterate_syms(cd_elf_obj_t* obj,
                                    cd_obj_iterate_sym_cb cb,
                                    void* arg) {
   cd_error_t err;
-  char* strtab;
-  char* ent;
-  Elf64_Xword size;
-  Elf64_Xword entsize;
+  cd_elf_obj_iterate_syms_t state;
 
   /* Find string table */
-  err = cd_elf_obj_get_section(obj, ".strtab", &strtab);
+  err = cd_elf_obj_get_section(obj, ".strtab", &state.strtab);
   if (!cd_is_ok(err))
-    goto fatal;
+    return err;
 
-  CD_ITERATE_SECTS(sh, Shdr, {
-    if (sect->sh_type != SHT_SYMTAB)
-      continue;
-
-    ent = obj->addr + sect->sh_offset;
-    size = sect->sh_size;
-    entsize = sect->sh_entsize;
-  }, {
-    for (; size != 0; size -= entsize, ent += entsize) {
-      char* name;
-      uint64_t value;
-      cd_sym_t sym;
-
-      if (obj->is_x64) {
-        Elf64_Sym* sym;
-
-        sym = (Elf64_Sym*) ent;
-        name = strtab + sym->st_name;
-        value = sym->st_value;
-      } else {
-        Elf32_Sym* sym;
-
-        sym = (Elf32_Sym*) ent;
-        name = strtab + sym->st_name;
-        value = sym->st_value;
-      }
-
-      sym.name = name;
-      sym.nlen = strlen(name);
-      sym.value = value;
-
-      err = cb((cd_obj_t*) obj, &sym, arg);
-      if (!cd_is_ok(err))
-        goto fatal;
-    }
-  });
-
-  return cd_ok();
-
-fatal:
-  return err;
+  state.cb = cb;
+  state.arg = arg;
+  return cd_elf_obj_iterate_sh(obj, cd_elf_obj_iterate_syms_sh, &state);
 }
 
 
-#define CD_ITERATE_NOTES(BODY)                                                \
-    do {                                                                      \
-      char* ent;                                                              \
-      char* end;                                                              \
-      CD_ITERATE_SECTS(ph, Phdr, {                                            \
-        if (sect->p_type != PT_NOTE)                                          \
-          continue;                                                           \
-                                                                              \
-        ent = obj->addr + sect->p_offset;                                     \
-        end = ent + sect->p_filesz;                                           \
-      }, {                                                                    \
-        while (ent < end) {                                                   \
-          Elf32_Word namesz;                                                  \
-          Elf32_Word descsz;                                                  \
-          Elf32_Word type;                                                    \
-          char* desc;                                                         \
-          cd_segment_t idx;                                                   \
-          cd_segment_t* r;                                                    \
-                                                                              \
-          if (obj->is_x64) {                                                  \
-            Elf64_Nhdr* nhdr;                                                 \
-                                                                              \
-            nhdr = (Elf64_Nhdr*) ent;                                         \
-            namesz = nhdr->n_namesz;                                          \
-            descsz = nhdr->n_descsz;                                          \
-            type = nhdr->n_type;                                              \
-            ent += sizeof(*nhdr);                                             \
-          } else {                                                            \
-            Elf32_Nhdr* nhdr;                                                 \
-                                                                              \
-            nhdr = (Elf32_Nhdr*) ent;                                         \
-            namesz = nhdr->n_namesz;                                          \
-            descsz = nhdr->n_descsz;                                          \
-            type = nhdr->n_type;                                              \
-            ent += sizeof(*nhdr);                                             \
-          }                                                                   \
-                                                                              \
-          /* Don't forget alignment */                                        \
-          ent += namesz;                                                      \
-          if (obj->is_x64) {                                                  \
-            if ((namesz & 7) != 0)                                            \
-              ent += 8 - (namesz & 7);                                        \
-            desc = ent;                                                       \
-            if ((descsz & 7) != 0)                                            \
-              ent += 8 - (descsz & 7);                                        \
-          } else {                                                            \
-            if ((namesz & 3) != 0)                                            \
-              ent += 4 - (namesz & 3);                                        \
-            desc = ent;                                                       \
-            if ((descsz & 3) != 0)                                            \
-              ent += 4 - (descsz & 3);                                        \
-          }                                                                   \
-                                                                              \
-          if (1) BODY                                                         \
-        }                                                                     \
-      });                                                                     \
-    } while (0)                                                               \
+cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
+                                    cd_elf_obj_iterate_notes_cb cb,
+                                    void* arg) {
+  cd_error_t err;
+  int i;
+  char* ptr;
+
+  ptr = obj->addr + obj->header.e_phoff;
+  for (i = 0; i < obj->header.e_phnum; i++, ptr += obj->header.e_phentsize) {
+    Elf64_Phdr* phdr;
+    Elf64_Phdr phdr_st;
+    char* ent;
+    char* end;
+
+    if (obj->is_x64) {
+      phdr = (Elf64_Phdr*) ptr;
+    } else {
+      Elf32_Phdr* phdr32;
+
+      phdr32 = (Elf32_Phdr*) ptr;
+      phdr = &phdr_st;
+
+      phdr->p_type = phdr32->p_type;
+      phdr->p_flags = phdr32->p_flags;
+      phdr->p_offset = phdr32->p_offset;
+      phdr->p_vaddr = phdr32->p_vaddr;
+      phdr->p_paddr = phdr32->p_paddr;
+      phdr->p_filesz = phdr32->p_filesz;
+      phdr->p_memsz = phdr32->p_memsz;
+      phdr->p_align = phdr32->p_align;
+    }
+
+    if (phdr->p_type != PT_NOTE)
+      continue;
+
+    ent = obj->addr + phdr->p_offset;
+    end = ent + phdr->p_filesz;
+
+    /* Iterate through actual notes */
+    while (ent < end) {
+      Elf64_Nhdr* nhdr;
+      Elf64_Nhdr nhdr_st;
+      char* desc;
+
+      if (obj->is_x64) {
+        nhdr = (Elf64_Nhdr*) ent;
+        ent += sizeof(*nhdr);
+      } else {
+        Elf32_Nhdr* nhdr32;
+
+        nhdr32 = (Elf32_Nhdr*) ent;
+        nhdr = &nhdr_st;
+
+        nhdr->n_namesz = nhdr32->n_namesz;
+        nhdr->n_descsz = nhdr32->n_descsz;
+        nhdr->n_type = nhdr32->n_type;
+
+        ent += sizeof(*nhdr32);
+      }
+
+      /* Don't forget alignment */
+      ent += nhdr->n_namesz;
+      if (obj->is_x64) {
+        if ((nhdr->n_namesz & 7) != 0)
+          ent += 8 - (nhdr->n_namesz & 7);
+        desc = ent;
+        if ((nhdr->n_descsz & 7) != 0)
+          ent += 8 - (nhdr->n_descsz & 7);
+      } else {
+        if ((nhdr->n_namesz & 3) != 0)
+          ent += 4 - (nhdr->n_namesz & 3);
+        desc = ent;
+        if ((nhdr->n_descsz & 3) != 0)
+          ent += 4 - (nhdr->n_descsz & 3);
+      }
+
+      err = cb(obj, nhdr, desc, arg);
+      if (!cd_is_ok(err))
+        return err;
+    }
+  }
+
+  return cd_ok();
+}
+
+
+typedef struct cd_elf_obj_get_thread_s cd_elf_obj_get_thread_t;
+
+struct cd_elf_obj_get_thread_s {
+  unsigned int index;
+  cd_obj_thread_t* thread;
+};
+
+
+cd_error_t cd_elf_obj_get_thread_iterate(cd_elf_obj_t* obj,
+                                         Elf64_Nhdr* nhdr,
+                                         char* desc,
+                                         void* arg) {
+  cd_error_t err;
+  cd_elf_obj_get_thread_t* st;
+  cd_obj_thread_t* thread;
+  unsigned int i;
+  cd_segment_t idx;
+  cd_segment_t* r;
+
+  if (nhdr->n_type != NT_PRSTATUS)
+    return cd_ok();
+
+  st = (cd_elf_obj_get_thread_t*) arg;
+  thread = st->thread;
+
+  if (st->index != 0) {
+    st->index--;
+    return cd_ok();
+  }
+
+  if (obj->is_x64) {
+    desc += 112;
+    thread->regs.count = (nhdr->n_descsz - 112) / sizeof(uint64_t);
+    for (i = 0; i < thread->regs.count; i++)
+      thread->regs.values[i] = *((uint64_t*) desc + i);
+
+    thread->regs.ip = thread->regs.values[16];
+    thread->stack.frame = thread->regs.values[4];
+    thread->stack.top = thread->regs.values[19];
+  } else {
+    desc += 96;
+    thread->regs.count = (nhdr->n_descsz - 96) / sizeof(uint32_t);
+    for (i = 0; i < thread->regs.count; i++)
+      thread->regs.values[i] = *((uint32_t*) desc + i);
+
+    thread->regs.ip = thread->regs.values[12];
+    thread->stack.frame = thread->regs.values[5];
+    thread->stack.top = thread->regs.values[15];
+  }
+
+  /* Find stack start address, end of the segment */
+  err = cd_obj_init_segments((cd_obj_t*) obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  if (obj->segment_count == 0)
+    return cd_error(kCDErrNotFound);
+
+  idx.start = thread->stack.top;
+  r = cd_splay_find(&obj->seg_splay, &idx);
+  if (r == NULL)
+    return cd_error(kCDErrNotFound);
+  thread->stack.bottom = r->end;
+
+  return cd_error(kCDErrSkip);
+}
 
 
 cd_error_t cd_elf_obj_get_thread(cd_elf_obj_t* obj,
                                  unsigned int index,
                                  cd_obj_thread_t* thread) {
   cd_error_t err;
+  cd_elf_obj_get_thread_t state;
 
-  if (!cd_elf_obj_is_core(obj)) {
-    err = cd_error_num(kCDErrNotCore, obj->header.e_type);
-    goto fatal;
-  }
+  if (!cd_elf_obj_is_core(obj))
+    return cd_error_num(kCDErrNotCore, obj->header.e_type);
 
-  CD_ITERATE_NOTES({
-    if (type != NT_PRSTATUS)
-      continue;
+  state.index = index;
+  state.thread = thread;
 
-    if (index != 0) {
-      index--;
-      continue;
-    }
-
-    if (obj->is_x64) {
-      unsigned int i;
-
-      desc += 112;
-      descsz -= 112;
-      thread->regs.count = descsz / sizeof(uint64_t);
-      for (i = 0; i < thread->regs.count; i++)
-        thread->regs.values[i] = *((uint64_t*) desc + i);
-
-      thread->regs.ip = thread->regs.values[16];
-      thread->stack.frame = thread->regs.values[4];
-      thread->stack.top = thread->regs.values[19];
-    } else {
-      unsigned int i;
-
-      desc += 96;
-      descsz -= 96;
-      thread->regs.count = descsz / sizeof(uint32_t);
-      for (i = 0; i < thread->regs.count; i++)
-        thread->regs.values[i] = *((uint32_t*) desc + i);
-
-      thread->regs.ip = thread->regs.values[12];
-      thread->stack.frame = thread->regs.values[5];
-      thread->stack.top = thread->regs.values[15];
-    }
-
-    /* Find stack start address, end of the segment */
-    err = cd_obj_init_segments((cd_obj_t*) obj);
-    if (!cd_is_ok(err))
-      goto fatal;
-
-    if (obj->segment_count == 0) {
-      err = cd_error(kCDErrNotFound);
-      goto fatal;
-    }
-
-    idx.start = thread->stack.top;
-    r = cd_splay_find(&obj->seg_splay, &idx);
-    if (r == NULL) {
-      err = cd_error(kCDErrNotFound);
-      goto fatal;
-    }
-    thread->stack.bottom = r->end;
-
+  err = cd_elf_obj_iterate_notes(obj,
+                                 cd_elf_obj_get_thread_iterate,
+                                 &state);
+  if (err.code == kCDErrSkip)
     return cd_ok();
-  });
+  if (!cd_is_ok(err))
+    return err;
 
-  err = cd_error_str(kCDErrNotFound, "thread info");
-
-fatal:
-  return err;
+  return cd_error_str(kCDErrNotFound, "thread info");
 }
 
 
@@ -473,12 +572,6 @@ cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj) {
     err = cd_error_num(kCDErrNotCore, obj->header.e_type);
     goto fatal;
   }
-
-  CD_ITERATE_NOTES({
-    if (type != NT_FILE)
-      continue;
-
-  });
 
   err = cd_ok();
 
@@ -497,7 +590,3 @@ cd_obj_method_t cd_elf_obj_method_def = {
 };
 
 cd_obj_method_t* cd_elf_obj_method = &cd_elf_obj_method_def;
-
-
-#undef CD_ITERATE_SECTS
-#undef CD_ITERATE_NOTES
