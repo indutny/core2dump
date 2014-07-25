@@ -31,7 +31,9 @@ typedef cd_error_t (*cd_elf_obj_iterate_notes_cb)(cd_elf_obj_t* obj,
 
 static cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
                                          const char* name,
-                                         char** sect);
+                                         char** sect,
+                                         uint64_t* size,
+                                         uint64_t* addr);
 static cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj);
 static cd_error_t cd_elf_obj_iterate_sh(cd_elf_obj_t* obj,
                                         cd_elf_obj_iterate_sh_cb cb,
@@ -235,7 +237,9 @@ fatal:
 
 cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
                                   const char* name,
-                                  char** sect) {
+                                  char** sect,
+                                  uint64_t* size,
+                                  uint64_t* addr) {
   char* ptr;
   int i;
 
@@ -243,6 +247,8 @@ cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
   for (i = 0; i < obj->header.e_shnum; i++, ptr += obj->header.e_shentsize) {
     char* ent;
     const char* nm;
+    uint64_t shsize;
+    uint64_t vmaddr;
 
     if (obj->is_x64) {
       Elf64_Shdr* sect;
@@ -250,18 +256,26 @@ cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
       sect = (Elf64_Shdr*) ptr;
       nm = obj->shstrtab + sect->sh_name;
       ent = obj->addr + sect->sh_offset;
+      shsize = sect->sh_size;
+      vmaddr = sect->sh_addr;
     } else {
       Elf32_Shdr* sect;
 
       sect = (Elf32_Shdr*) ptr;
       nm = obj->shstrtab + sect->sh_name;
       ent = obj->addr + sect->sh_offset;
+      shsize = sect->sh_size;
+      vmaddr = sect->sh_addr;
     }
 
     if (strcmp(nm, name) != 0)
       continue;
 
     *sect = ent;
+    if (size != NULL)
+      *size = shsize;
+    if (addr != NULL)
+      *addr = vmaddr;
 
     return cd_ok();
   }
@@ -379,7 +393,7 @@ cd_error_t cd_elf_obj_iterate_syms(cd_elf_obj_t* obj,
   cd_elf_obj_iterate_syms_t state;
 
   /* Find string table */
-  err = cd_elf_obj_get_section(obj, ".strtab", &state.strtab);
+  err = cd_elf_obj_get_section(obj, ".strtab", &state.strtab, NULL, NULL);
   if (!cd_is_ok(err))
     return err;
 
@@ -649,13 +663,26 @@ cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj) {
 }
 
 
+cd_error_t cd_elf_obj_get_dbg(cd_elf_obj_t* obj,
+                              void** res,
+                              uint64_t* size,
+                              uint64_t* vmaddr) {
+  return cd_elf_obj_get_section(obj,
+                                ".eh_frame",
+                                (char**) res,
+                                size,
+                                vmaddr);
+}
+
+
 cd_obj_method_t cd_elf_obj_method_def = {
   .obj_new = (cd_obj_method_new_t) cd_elf_obj_new,
   .obj_free = (cd_obj_method_free_t) cd_elf_obj_free,
   .obj_is_core = (cd_obj_method_is_core_t) cd_elf_obj_is_core,
   .obj_get_thread = (cd_obj_method_get_thread_t) cd_elf_obj_get_thread,
   .obj_iterate_syms = (cd_obj_method_iterate_syms_t) cd_elf_obj_iterate_syms,
-  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_elf_obj_iterate_segs
+  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_elf_obj_iterate_segs,
+  .obj_get_dbg_frame = (cd_obj_method_get_dbg_frame_t) cd_elf_obj_get_dbg
 };
 
 cd_obj_method_t* cd_elf_obj_method = &cd_elf_obj_method_def;

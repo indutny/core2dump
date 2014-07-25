@@ -33,6 +33,7 @@ static cd_error_t cd_obj_insert_syms(cd_obj_t* obj,
                                      cd_sym_t* sym,
                                      void* arg);
 static cd_error_t cd_obj_init_dwarf(cd_obj_t* obj);
+static cd_error_t cd_obj_init_aslr(cd_obj_t* obj, cd_obj_opts_t* opts);
 
 
 /* Wrappers around method */
@@ -69,6 +70,14 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
 
   if (opts != NULL && opts->parent != NULL) {
     *err = cd_obj_add_dso(opts->parent, res);
+    if (!cd_is_ok(*err)) {
+      cd_obj_free(res);
+      res = NULL;
+    }
+  }
+
+  if (opts != NULL && opts->reloc != 0) {
+    *err = cd_obj_init_aslr(res, opts);
     if (!cd_is_ok(*err)) {
       cd_obj_free(res);
       res = NULL;
@@ -565,5 +574,32 @@ cd_error_t cd_obj_add_dso(cd_obj_t* obj, cd_obj_t* dso) {
 
 cd_error_t cd_obj_prepend_dso(cd_obj_t* obj, cd_obj_t* dso) {
   QUEUE_INSERT_HEAD(&obj->dso, &dso->member);
+  return cd_ok();
+}
+
+
+cd_error_t cd_obj_init_aslr(cd_obj_t* obj, cd_obj_opts_t* opts) {
+  cd_error_t err;
+  int i;
+
+  /* Figure out the ASLR slide value */
+  err = cd_obj_init_segments((cd_obj_t*) obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  for (i = 0; i < obj->segment_count; i++) {
+    cd_segment_t* seg;
+
+    seg = &obj->segments[i];
+    if (seg->fileoff != 0 || seg->sects == 0)
+      continue;
+
+    obj->aslr = (int64_t) opts->reloc - seg->start;
+    break;
+  }
+
+  if (i == obj->segment_count)
+    return cd_error_str(kCDErrNotFound, "0-fileoff dyld segment");
+
   return cd_ok();
 }

@@ -102,8 +102,6 @@ static cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj);
 static cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj,
                                             cd_segment_t* seg);
 static cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj);
-static cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj,
-                                        cd_obj_opts_t* opts);
 static cd_error_t cd_mach_obj_iterate_lcmds(cd_mach_obj_t* obj,
                                             struct mach_header* hdr,
                                             size_t size,
@@ -198,12 +196,6 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_obj_opts_t* opts, cd_error_t* err) {
   if (!cd_is_ok(*err))
     goto failed_magic2;
 
-  if (opts != NULL && opts->reloc != 0) {
-    *err = cd_mach_obj_init_aslr(obj, opts);
-    if (!cd_is_ok(*err))
-      goto failed_magic2;
-  }
-
   return obj;
 
 failed_magic2:
@@ -228,33 +220,6 @@ void cd_mach_obj_free(cd_mach_obj_t* obj) {
   cd_obj_internal_free((cd_obj_t*) obj);
 
   free(obj);
-}
-
-
-cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj, cd_obj_opts_t* opts) {
-  cd_error_t err;
-  int i;
-
-  /* Figure out the ASLR slide value */
-  err = cd_obj_init_segments((cd_obj_t*) obj);
-  if (!cd_is_ok(err))
-    return err;
-
-  for (i = 0; i < obj->segment_count; i++) {
-    cd_segment_t* seg;
-
-    seg = &obj->segments[i];
-    if (seg->fileoff != 0 || seg->sects == 0)
-      continue;
-
-    obj->aslr = (int64_t) opts->reloc - seg->start;
-    break;
-  }
-
-  if (i == obj->segment_count)
-    return cd_error_str(kCDErrNotFound, "0-fileoff dyld segment");
-
-  return cd_ok();
 }
 
 
