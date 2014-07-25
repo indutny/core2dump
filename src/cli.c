@@ -190,13 +190,13 @@ cd_error_t cd_obj2json(int input, int binary, int output, cd_argv_t* argv) {
   abort();
 #endif
 
-  state.core = cd_obj_new(cd_mach_obj_method, input, &err);
+  state.core = cd_obj_new(method, input, &err);
   if (!cd_is_ok(err))
     goto fatal;
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
 
-  state.binary = cd_obj_new(cd_mach_obj_method, binary, &err);
+  state.binary = cd_obj_new(method, binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
 

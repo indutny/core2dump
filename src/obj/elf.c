@@ -17,13 +17,13 @@
 
 typedef struct cd_elf_obj_s cd_elf_obj_t;
 
-static cd_error_t cd_obj_get_section(cd_elf_obj_t* obj,
-                                     const char* name,
-                                     char** sect);
+static cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
+                                         const char* name,
+                                         char** sect);
 
 
 struct cd_elf_obj_s {
-  CD_OBJ_COMMON_FIELDS
+  CD_OBJ_INTERNAL_FIELDS
 
   Elf64_Ehdr header;
   Elf64_Ehdr* h64;
@@ -272,7 +272,7 @@ cd_error_t cd_elf_obj_iterate_syms(cd_elf_obj_t* obj,
   Elf64_Xword entsize;
 
   /* Find string table */
-  err = cd_obj_get_section(obj, ".strtab", &strtab);
+  err = cd_elf_obj_get_section(obj, ".strtab", &strtab);
   if (!cd_is_ok(err))
     goto fatal;
 
@@ -408,7 +408,7 @@ cd_error_t cd_elf_obj_get_thread(cd_elf_obj_t* obj,
       }
 
       /* Find stack start address, end of the segment */
-      err = cd_obj_init_segments(obj);
+      err = cd_obj_init_segments((cd_obj_t*) obj);
       if (!cd_is_ok(err))
         goto fatal;
 
