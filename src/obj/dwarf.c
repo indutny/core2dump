@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static void cd_dwarf_free_cie(cd_dwarf_cie_t* fde);
 static void cd_dwarf_free_fde(cd_dwarf_fde_t* fde);
@@ -75,7 +76,7 @@ cd_error_t cd_dwarf_parse_cfa(cd_obj_t* obj,
   end = (char*) data + size;
   while (data < end) {
     err = cd_dwarf_parse_cie(cfa, (char**) &data, end - data);
-    if (!cd_is_ok(err))
+    if (!cd_is_ok(err) && err.code != kCDErrSkip)
       goto failed_parse_cie;
   }
 
@@ -328,6 +329,12 @@ cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
     goto fatal;
   }
 
+  /* Zero terminator CIE */
+  if (cie->len == 0) {
+    err = cd_error_str(kCDErrSkip, "Zero terminator");
+    goto fatal;
+  }
+
   size -= cie->len;
   end = *data + cie->len;
 
@@ -425,6 +432,12 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
     goto fatal;
   }
 
+  /* Zero terminator FDE */
+  if (fde->len == 0) {
+    err = cd_error_str(kCDErrSkip, "Unexpected CIE");
+    goto fatal;
+  }
+
   size -= fde->len;
   end = *data + fde->len;
 
@@ -501,6 +514,7 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
     goto fatal;
   }
 
+done:
   QUEUE_INSERT_TAIL(&cie->fdes, &fde->member);
   return cd_ok();
 
