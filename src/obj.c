@@ -72,7 +72,7 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
     *err = cd_obj_add_dso(opts->parent, res);
     if (!cd_is_ok(*err)) {
       cd_obj_free(res);
-      res = NULL;
+      return NULL;
     }
   }
 
@@ -80,7 +80,7 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
     *err = cd_obj_init_aslr(res, opts);
     if (!cd_is_ok(*err)) {
       cd_obj_free(res);
-      res = NULL;
+      return NULL;
     }
   }
 
@@ -201,13 +201,17 @@ cd_error_t cd_obj_init_syms(cd_obj_t* obj) {
     return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
   obj->has_syms = 1;
 
-  err = cd_obj_iterate_syms((cd_obj_t*) obj, cd_obj_insert_syms, NULL);
+  if (cd_obj_is_core(obj))
+    return cd_ok();
+
+  /* Insert seg_ends first, to not let `_end` overwrite them on linux */
+  err = cd_obj_iterate_segs((cd_obj_t*) obj,
+                            cd_obj_insert_seg_ends,
+                            NULL);
   if (!cd_is_ok(err))
     return err;
 
-  return cd_obj_iterate_segs((cd_obj_t*) obj,
-                             cd_obj_insert_seg_ends,
-                             NULL);
+  return cd_obj_iterate_syms((cd_obj_t*) obj, cd_obj_insert_syms, NULL);
 }
 
 
@@ -290,8 +294,7 @@ cd_error_t cd_obj_fill_segs(cd_obj_t* obj,
   **ptr = *seg;
 
   /* Fill the splay tree */
-  if (cd_splay_insert(&obj->seg_splay, *ptr) != 0)
-    return cd_error_str(kCDErrNoMem, "seg_splay");
+  cd_splay_insert(&obj->seg_splay, *ptr);
 
   /* Move the pointer forward */
   *ptr = *ptr + 1;

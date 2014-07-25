@@ -331,6 +331,7 @@ typedef struct cd_elf_obj_iterate_syms_s cd_elf_obj_iterate_syms_t;
 
 struct cd_elf_obj_iterate_syms_s {
   char* strtab;
+  char* dynstr;
   cd_obj_iterate_sym_cb cb;
   void* arg;
 };
@@ -344,11 +345,20 @@ cd_error_t cd_elf_obj_iterate_syms_sh(cd_elf_obj_t* obj,
   Elf64_Xword size;
   Elf64_Xword entsize;
   cd_elf_obj_iterate_syms_t* st;
+  char* strtab;
 
-  if (shdr->sh_type != SHT_SYMTAB)
+  if (shdr->sh_type != SHT_SYMTAB && shdr->sh_type != SHT_DYNSYM)
     return cd_ok();
 
   st = (cd_elf_obj_iterate_syms_t*) arg;
+
+  if (shdr->sh_type == SHT_SYMTAB)
+    strtab = st->strtab;
+  else
+    strtab = st->dynstr;
+
+  if (strtab == NULL)
+    return cd_ok();
 
   ent = obj->addr + shdr->sh_offset;
   size = shdr->sh_size;
@@ -363,13 +373,13 @@ cd_error_t cd_elf_obj_iterate_syms_sh(cd_elf_obj_t* obj,
       Elf64_Sym* sym;
 
       sym = (Elf64_Sym*) ent;
-      name = st->strtab + sym->st_name;
+      name = strtab + sym->st_name;
       value = sym->st_value;
     } else {
       Elf32_Sym* sym;
 
       sym = (Elf32_Sym*) ent;
-      name = st->strtab + sym->st_name;
+      name = strtab + sym->st_name;
       value = sym->st_value;
     }
 
@@ -395,7 +405,10 @@ cd_error_t cd_elf_obj_iterate_syms(cd_elf_obj_t* obj,
   /* Find string table */
   err = cd_elf_obj_get_section(obj, ".strtab", &state.strtab, NULL, NULL);
   if (!cd_is_ok(err))
-    return err;
+    state.strtab = NULL;
+  err = cd_elf_obj_get_section(obj, ".dynstr", &state.dynstr, NULL, NULL);
+  if (!cd_is_ok(err))
+    state.dynstr = NULL;
 
   state.cb = cb;
   state.arg = arg;
