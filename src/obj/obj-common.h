@@ -14,6 +14,9 @@ typedef cd_error_t (*cd_obj_iterate_sym_cb)(struct cd_obj_s* obj,
                                             int nlen,
                                             uint64_t value,
                                             void* arg);
+typedef cd_error_t (*cd_obj_iterate_seg_cb)(struct cd_obj_s* obj,
+                                            cd_segment_t* seg,
+                                            void* arg);
 
 #define CD_OBJ_COMMON_FIELDS                                                  \
     void* addr;                                                               \
@@ -33,11 +36,15 @@ struct cd_segment_s {
   char* ptr;
 };
 
-int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
+cd_error_t cd_obj_common_init(struct cd_obj_s* obj);
+void cd_obj_common_free(struct cd_obj_s* obj);
 
 /* Platform-specific */
 cd_error_t cd_obj_iterate_syms(struct cd_obj_s* obj,
                                cd_obj_iterate_sym_cb cb,
+                               void* arg);
+cd_error_t cd_obj_iterate_segs(struct cd_obj_s* obj,
+                               cd_obj_iterate_seg_cb cb,
                                void* arg);
 
 #endif  /* SRC_OBJ_OBJ_COMMON_H_ */

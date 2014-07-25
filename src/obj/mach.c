@@ -38,12 +38,14 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
     goto failed_fstat;
   }
   obj->size = sbuf.st_size;
-  obj->has_syms = 0;
-  obj->segment_count = -1;
+
+  *err = cd_obj_common_init(obj);
+  if (!cd_is_ok(*err))
+    goto failed_fstat;
 
   if (obj->size < sizeof(*obj->header)) {
     *err = cd_error(kCDErrNotEnoughMagic);
-    goto failed_fstat;
+    goto failed_magic;
   }
 
   obj->addr = mmap(NULL,
@@ -54,7 +56,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
                    0);
   if (obj->addr == MAP_FAILED) {
     *err = cd_error_num(kCDErrMmap, errno);
-    goto failed_fstat;
+    goto failed_magic;
   }
 
   /* Technically the only difference between X64 and IA32 header is a
@@ -65,12 +67,12 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
   /* Big-Endian not supported */
   if (obj->header->magic == MH_CIGAM || obj->header->magic == MH_CIGAM_64) {
     *err = cd_error_num(kCDErrBigEndianMagic, obj->header->magic);
-    goto failed_magic_check;
+    goto failed_magic2;
   }
 
   if (obj->header->magic != MH_MAGIC && obj->header->magic != MH_MAGIC_64) {
     *err = cd_error_num(kCDErrInvalidMagic, obj->header->magic);
-    goto failed_magic_check;
+    goto failed_magic2;
   }
 
   obj->is_x64 = obj->header->magic == MH_MAGIC_64;
@@ -78,9 +80,12 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
   *err = cd_ok();
   return obj;
 
-failed_magic_check:
+failed_magic2:
   munmap(obj->addr, obj->size);
   obj->addr = NULL;
+
+failed_magic:
+  cd_obj_common_free(obj);
 
 failed_fstat:
   free(obj);
@@ -94,20 +99,13 @@ void cd_obj_free(cd_obj_t* obj) {
   munmap(obj->addr, obj->size);
   obj->addr = NULL;
 
-  if (obj->has_syms)
-    cd_hashmap_destroy(&obj->syms);
-  obj->has_syms = 0;
-
-  if (obj->segment_count != -1) {
-    free(obj->segments);
-    cd_splay_destroy(&obj->seg_splay);
-  }
+  cd_obj_common_free(obj);
   free(obj);
 }
 
 
-int cd_obj_is_x64(cd_obj_t* obj) {
-  return obj->is_x64;
+int cd_obj_is_core(cd_obj_t* obj) {
+  return obj->header->filetype == MH_CORE;
 }
 
 
@@ -142,34 +140,16 @@ int cd_obj_is_x64(cd_obj_t* obj) {
     } while (0);                                                              \
 
 
-cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
+cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
+                               cd_obj_iterate_seg_cb cb,
+                               void* arg) {
   cd_error_t err;
-  cd_segment_t* seg;
 
-  if (obj->segment_count != -1)
-    return cd_ok();
-
-  cd_splay_init(&obj->seg_splay,
-                (int (*)(const void*, const void*)) cd_segment_sort);
-
-  /* Count segments */
-  obj->segment_count = 0;
-  CD_ITERATE_LCMDS({
-    if (cmd->cmd == LC_SEGMENT || cmd->cmd == LC_SEGMENT_64)
-      obj->segment_count++;
-  })
-
-  /* Allocate segments */
-  obj->segments = calloc(obj->segment_count, sizeof(*obj->segments));
-  if (obj->segments == NULL)
-    return cd_error_str(kCDErrNoMem, "cd_segment_t");
-
-  /* Fill segments */
-  seg = obj->segments;
   CD_ITERATE_LCMDS({
     uint64_t vmaddr;
     uint64_t vmsize;
     uint64_t fileoff;
+    cd_segment_t seg;
 
     if (cmd->cmd == LC_SEGMENT) {
       struct segment_command* seg;
@@ -191,50 +171,20 @@ cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
       continue;
     }
 
-    seg->start = vmaddr;
-    seg->end = vmaddr + vmsize;
-    seg->ptr = (char*) obj->addr + fileoff;
+    seg.start = vmaddr;
+    seg.end = vmaddr + vmsize;
+    seg.ptr = (char*) obj->addr + fileoff;
 
     /* Fill the splay tree */
-    if (cd_splay_insert(&obj->seg_splay, seg) != 0)
-      return cd_error_str(kCDErrNoMem, "seg_splay");
-
-    seg++;
+    err = cb(obj, &seg, arg);
+    if (!cd_is_ok(err))
+      goto fatal;
   })
 
   return cd_ok();
 
 fatal:
   return err;
-}
-
-
-cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
-  cd_error_t err;
-  cd_segment_t idx;
-  cd_segment_t* r;
-
-  if (obj->header->filetype != MH_CORE)
-    return cd_error_num(kCDErrNotCore, obj->header->filetype);
-
-  err = cd_obj_init_segments(obj);
-  if (!cd_is_ok(err))
-    return err;
-
-  if (obj->segment_count == 0)
-    return cd_error(kCDErrNotFound);
-
-  idx.start = addr;
-  r = cd_splay_find(&obj->seg_splay, &idx);
-  if (r == NULL)
-    return cd_error(kCDErrNotFound);
-
-  if (addr + size > r->end)
-    return cd_error(kCDErrNotFound);
-
-  *res = r->ptr + (addr - r->start);
-
-  return cd_ok();
 }
 
 
@@ -312,7 +262,7 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
                              cd_obj_thread_t* thread) {
   cd_error_t err;
 
-  if (obj->header->filetype != MH_CORE) {
+  if (!cd_obj_is_core(obj)) {
     err = cd_error_num(kCDErrNotCore, obj->header->filetype);
     goto fatal;
   }
