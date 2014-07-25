@@ -26,23 +26,35 @@ static cd_error_t cd_obj_fill_segs(struct cd_obj_s* obj,
                                    void* arg);
 static cd_error_t cd_obj_init_segments(cd_common_obj_t* cobj);
 static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
+static int cd_symbol_sort(uint64_t a, uint64_t b);
 static cd_error_t cd_obj_init_syms(struct cd_obj_s* obj,
-                                   const char* name,
-                                   int nlen,
-                                   uint64_t value,
+                                   cd_sym_t* sym,
                                    void* arg);
 
 
 cd_error_t cd_obj_init_syms(struct cd_obj_s* obj,
-                            const char* name,
-                            int nlen,
-                            uint64_t value,
+                            cd_sym_t* sym,
                             void* arg) {
   cd_common_obj_t* cobj;
+  cd_sym_t* copy;
+
+  /* Skip empty symbols */
+  if (sym->nlen == 0 || sym->value == 0)
+    return cd_ok();
 
   cobj = (cd_common_obj_t*) obj;
-  if (cd_hashmap_insert(&cobj->syms, name, nlen, (void*) value) != 0)
+  if (cd_hashmap_insert(&cobj->syms,
+                        sym->name,
+                        sym->nlen,
+                        (void*) sym->value) != 0) {
     return cd_error_str(kCDErrNoMem, "cd_hashmap_insert");
+  }
+
+  copy = malloc(sizeof(*copy));
+  *copy = *sym;
+
+  if (cd_splay_insert(&cobj->sym_splay, copy) != 0)
+    return cd_error_str(kCDErrNoMem, "sym_splay");
 
   return cd_ok();
 }
@@ -58,6 +70,10 @@ cd_error_t cd_obj_get_sym(struct cd_obj_s* obj,
   cobj = (cd_common_obj_t*) obj;
 
   if (!cobj->has_syms) {
+    cd_splay_init(&cobj->sym_splay,
+                  (int (*)(const void*, const void*)) cd_symbol_sort);
+    cobj->sym_splay.allocated = 1;
+
     if (cd_hashmap_init(&cobj->syms, kCDSymtabInitialSize, 0) != 0)
       return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
     cobj->has_syms = 1;
@@ -170,6 +186,11 @@ cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
 
 int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b) {
   return a->start > b->start ? 1 : a->start == b->start ? 0 : -1;
+}
+
+
+int cd_symbol_sort(uint64_t a, uint64_t b) {
+  return a > b ? 1 : a == b ? 0 : -1;
 }
 
 

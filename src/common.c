@@ -278,6 +278,7 @@ void cd_writebuf_flush(cd_writebuf_t* buf) {
 void cd_splay_init(cd_splay_t* splay, cd_splay_sort_cb sort_cb) {
   splay->root = NULL;
   splay->sort_cb = sort_cb;
+  splay->allocated = 0;
 }
 
 
@@ -286,6 +287,8 @@ void cd_splay_destroy_rec(cd_splay_t* splay, cd_splay_node_t* node) {
     return;
   cd_splay_destroy_rec(splay, node->left);
   cd_splay_destroy_rec(splay, node->right);
+  if (splay->allocated)
+    free(node->value);
   free(node);
 }
 

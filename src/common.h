@@ -36,6 +36,7 @@ struct cd_writebuf_s {
 struct cd_splay_s {
   cd_splay_node_t* root;
   cd_splay_sort_cb sort_cb;
+  int allocated;
 };
 
 struct cd_splay_node_s {

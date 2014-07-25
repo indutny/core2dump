@@ -217,9 +217,9 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
 
     for (i = 0; i < symtab->nsyms; i++) {
       char* name;
-      int len;
       uint8_t type;
       uint64_t value;
+      cd_sym_t sym;
 
       /* XXX Add bounds checks */
       name = obj->addr;
@@ -236,14 +236,11 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
         value = nl64[i].n_value;
       else
         value = nl[i].n_value;
-      if (value == 0)
-        continue;
 
-      len = strlen(name);
-      if (len == 0)
-        continue;
-
-      err = cb(obj, name, len, value, arg);
+      sym.name = name;
+      sym.nlen = strlen(name);
+      sym.value = value;
+      err = cb(obj, &sym, arg);
       if (!cd_is_ok(err))
         goto fatal;
     }

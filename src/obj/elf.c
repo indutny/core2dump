@@ -288,8 +288,8 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
   }, {
     for (; size != 0; size -= entsize, ent += entsize) {
       char* name;
-      int len;
       uint64_t value;
+      cd_sym_t sym;
 
       if (obj->is_x64) {
         Elf64_Sym* sym;
@@ -305,8 +305,11 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
         value = sym->st_value;
       }
 
-      len = strlen(name);
-      err = cb(obj, name, len, value, arg);
+      sym.name = name;
+      sym.nlen = strlen(name);
+      sym.value = value;
+
+      err = cb(obj, &sym, arg);
       if (!cd_is_ok(err))
         goto fatal;
     }
