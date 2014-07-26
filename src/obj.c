@@ -448,7 +448,7 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   else if (!cd_is_ok(err))
     return err;
   /* Check that FDE covers the symbol */
-  else if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
+  else if ((*fde)->init_loc + obj->aslr + (*fde)->range < addr) {
     *fde = NULL;
     return cd_ok();
   }
@@ -480,8 +480,6 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   char* stack;
   uint64_t start;
   uint64_t stack_size;
-  uint64_t frame_start;
-  uint64_t frame_end;
 
   err = cd_obj_get_thread(obj, thread_id, &cur);
   if (!cd_is_ok(err))
@@ -493,9 +491,7 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  frame_start = cur.stack.frame - start;
-  frame_end = 0;
-  while (frame_end < stack_size) {
+  while (cur.stack.top < start + stack_size) {
     cd_sym_t* sym;
     cd_dwarf_fde_t* fde;
     cd_frame_t frame;
@@ -511,7 +507,6 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     }
 
     frame.ip = last.regs.ip;
-    frame.stop = stack + frame_end;
     if (sym == NULL) {
       frame.sym = NULL;
       frame.sym_len = 0;
@@ -521,7 +516,19 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     }
 
     /* No FDE case, just use defaults */
-    if (fde != NULL) {
+    if (fde == NULL) {
+      uint64_t off;
+
+      off = last.stack.frame - start;
+
+      /* Next frame */
+      cur.regs.ip =
+          *(uint64_t*) (stack + off + (cd_obj_is_x64(obj) ? 8 : 4));
+      cur.stack.frame = *(uint64_t*) (stack + off);
+
+      /* Change thread state, so the FDE emulator could see it */
+      cur.stack.top = cur.stack.frame + (cd_obj_is_x64(obj) ? 16 : 8);
+    } else {
       /* Use FDE to figure out thread state before entering the proc */
       err = cd_dwarf_fde_run(fde,
                              stack,
@@ -531,38 +538,18 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
                              &cur);
       if (!cd_is_ok(err))
         return err;
-
-      frame_start = cur.stack.frame - start;
     }
 
-    frame.start = stack + frame_start;
-    if (frame_start < frame_end)
-      return cd_error(kCDErrStackOOB);
+    frame.start = stack + (last.stack.top - start);
+    frame.stop = stack + (cur.stack.top - start);
 
     /* End of stack */
-    if (frame_start >= stack_size)
+    if (last.stack.top >= start + stack_size)
       break;
 
     err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))
       return err;
-
-    /* FDE - is present, next thread state is already filled */
-    if (fde != NULL)
-      continue;
-
-    /* Next frame */
-    frame_end = frame_start;
-    cur.regs.ip =
-        *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
-    frame_start = *(uint64_t*) (stack + frame_start);
-
-    /* Change thread state, so the FDE emulator could see it */
-    cur.stack.frame = frame_start;
-    cur.stack.top = frame_end + (cd_obj_is_x64(obj) ? 16 : 8) + start;
-
-    /* Relocate value */
-    frame_start -= start;
   }
 
   return cd_error(kCDErrOk);

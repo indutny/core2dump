@@ -28,12 +28,18 @@ struct cd_dwarf_cfa_s {
   char* start;
   uint64_t sect_addr;
 
+  /* CIE file offset splay */
+  cd_splay_t cie_splay;
+
+  /* FDE memory offset splay */
   cd_splay_t fde_splay;
 };
 
 struct cd_dwarf_cie_s {
   QUEUE member;
   QUEUE fdes;
+
+  char* start;
 
   cd_dwarf_cfa_t* cfa;
   uint64_t len;

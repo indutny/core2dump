@@ -18,7 +18,7 @@ static cd_error_t cd_dwarf_parse_cie_aug(cd_dwarf_cie_t* cie,
 static cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
                                      char** data,
                                      uint64_t size);
-static cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie,
+static cd_error_t cd_dwarf_parse_fde(cd_dwarf_cfa_t* cfa,
                                      char** data,
                                      uint64_t size);
 static cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint64_t* res);
@@ -34,6 +34,7 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
                         uint64_t rip,
                         cd_dwarf_state_t* prev,
                         cd_dwarf_state_t* state);
+static int cd_dwarf_sort_cie(cd_dwarf_cie_t* a, cd_dwarf_cie_t* b);
 static int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b);
 static cd_error_t cd_dwarf_treg(cd_obj_thread_t* thread,
                                 cd_dwarf_reg_t reg,
@@ -70,6 +71,7 @@ cd_error_t cd_dwarf_parse_cfa(cd_obj_t* obj,
   cfa->start = (char*) data;
   cfa->sect_addr = sect_addr;
 
+  cd_splay_init(&cfa->cie_splay, (cd_splay_sort_cb) cd_dwarf_sort_cie);
   cd_splay_init(&cfa->fde_splay, (cd_splay_sort_cb) cd_dwarf_sort_fde);
 
   /* Parse CIEs one-by-one */
@@ -311,6 +313,7 @@ cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
     return cd_error_str(kCDErrNoMem, "cd_dwarf_cie_t");
 
   cie->cfa = cfa;
+  cie->start = *data;
 
   QUEUE_INIT(&cie->fdes);
   /* TODO(indutny): bounds checks */
@@ -378,11 +381,17 @@ cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
   /* Skip the rest */
   *data = end;
 
+  /* Insert CIE before we start parsing FDEs */
+  if (cd_splay_insert(&cfa->cie_splay, cie) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cie_splay insert");
+    goto fatal;
+  }
+
   do {
     char* start;
 
     start = *data;
-    err = cd_dwarf_parse_fde(cie, data, size);
+    err = cd_dwarf_parse_fde(cfa, data, size);
     if (err.code == kCDErrSkip) {
       /* Revert lookup */
       *data = start;
@@ -403,18 +412,19 @@ fatal:
 }
 
 
-cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
+cd_error_t cd_dwarf_parse_fde(cd_dwarf_cfa_t* cfa, char** data, uint64_t size) {
   cd_error_t err;
   cd_dwarf_fde_t* fde;
+  cd_dwarf_cie_t* cie;
+  cd_dwarf_cie_t idx;
   char* end;
+  char* cie_ptr;
   int x64;
   uint64_t ip;
 
   fde = malloc(sizeof(*fde));
   if (fde == NULL)
     return cd_error_str(kCDErrNoMem, "cd_dwarf_fde_t");
-
-  fde->cie = cie;
 
   /* TODO(indutny): bounds checks */
 
@@ -440,6 +450,7 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
 
   size -= fde->len;
   end = *data + fde->len;
+  cie_ptr = *data;
 
   if (x64) {
     fde->cie_off = *(uint64_t*) *data;
@@ -455,18 +466,27 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
     goto fatal;
   }
 
-  ip = fde->cie->cfa->sect_addr + (*data - fde->cie->cfa->start);
+  /* Find existing CIE */
+  cie_ptr -= fde->cie_off;
+  idx.start = cie_ptr;
+  cie = cd_splay_find(&cfa->cie_splay, &idx);
+  if (cie == NULL || cie->start != cie_ptr)
+    return cd_error_str(kCDErrNotFound, "cd_dwarf_cie_t in splay");
+
+  fde->cie = cie;
+
+  ip = cfa->sect_addr + (*data - cfa->start);
   err = cd_dwarf_read(data,
                       end - *data,
                       cie->fde_enc,
-                      cie->cfa->obj->is_x64,
+                      cfa->obj->is_x64,
                       &fde->init_loc);
   if (!cd_is_ok(err))
     goto fatal;
   err = cd_dwarf_read(data,
                       end - *data,
                       cie->fde_enc,
-                      cie->cfa->obj->is_x64,
+                      cfa->obj->is_x64,
                       &fde->range);
   if (!cd_is_ok(err))
     goto fatal;
@@ -509,7 +529,7 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
   /* Skip the rest */
   *data = end;
 
-  if (cd_splay_insert(&fde->cie->cfa->fde_splay, fde) != 0) {
+  if (cd_splay_insert(&cfa->fde_splay, fde) != 0) {
     err = cd_error_str(kCDErrNoMem, "fde_splay insert");
     goto fatal;
   }
@@ -521,6 +541,16 @@ done:
 fatal:
   cd_dwarf_free_fde(fde);
   return err;
+}
+
+
+int cd_dwarf_sort_cie(cd_dwarf_cie_t* a, cd_dwarf_cie_t* b) {
+  uintptr_t ap;
+  uintptr_t bp;
+
+  ap = (uintptr_t) a->start;
+  bp = (uintptr_t) b->start;
+  return ap > bp ? 1 : ap < bp ? -1 : 0;
 }
 
 
@@ -821,6 +851,18 @@ cd_error_t cd_dwarf_load(cd_dwarf_state_t* state,
       break;
     case kCDDwarfLocMem:
       *res = *(uint64_t*) &stack[loc->off];
+      break;
+    case kCDDwarfLocNone:
+      {
+        uint64_t* oval;
+
+        err = cd_dwarf_treg(othread, reg, &oval);
+        if (!cd_is_ok(err))
+          return err;
+
+        *res = *oval;
+      }
+      /* No operation */
       break;
     default:
       return cd_error_str(kCDErrDwarfNoCFA, "FDE's IP uses invalid loc type");
