@@ -68,6 +68,7 @@ cd_error_t cd_collect_frame(cd_obj_t* obj, cd_frame_t* sframe, void* arg) {
   /* Copy the data */
   frame->start = sframe->start;
   frame->stop = sframe->stop;
+  frame->frame = sframe->frame;
   frame->ip = sframe->ip;
 
   /* Lookup C/C++ symbol if present */
@@ -115,13 +116,13 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_js_frame_t* frame) {
   cd_obj_thread_t thread;
   cd_node_t* fn_node;
 
-  ctx = *(void**) (frame->start + cd_v8_off_fp_context);
+  ctx = *(void**) (frame->frame + cd_v8_off_fp_context);
   if (V8_IS_SMI(ctx) &&
       V8_SMI(ctx) == cd_v8_frametype_ArgumentsAdaptorFrame) {
     CFRAME(frame, "<adaptor>");
   }
 
-  marker = *(void**) (frame->start + cd_v8_off_fp_marker);
+  marker = *(void**) (frame->frame + cd_v8_off_fp_marker);
   if (V8_IS_SMI(marker)) {
     int32_t m;
     m = V8_SMI(marker);
@@ -141,8 +142,8 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_js_frame_t* frame) {
     }
   }
 
-  fn = *(void**) (frame->start + cd_v8_off_fp_function);
-  args = *(void**) (frame->start + cd_v8_off_fp_args);
+  fn = *(void**) (frame->frame + cd_v8_off_fp_function);
+  args = *(void**) (frame->frame + cd_v8_off_fp_args);
   if (!V8_IS_HEAPOBJECT(fn) || !V8_IS_HEAPOBJECT(args))
     return cd_error(kCDErrNotFound);
 

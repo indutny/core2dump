@@ -491,7 +491,7 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  while (cur.stack.top < start + stack_size) {
+  while (cur.stack.top >= start && cur.stack.top < start + stack_size) {
     cd_sym_t* sym;
     cd_dwarf_fde_t* fde;
     cd_frame_t frame;
@@ -523,7 +523,7 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
 
       /* Next frame */
       cur.regs.ip =
-          *(uint64_t*) (stack + off + (cd_obj_is_x64(obj) ? 8 : 4));
+          *(uint64_t*) (stack + off - (cd_obj_is_x64(obj) ? 16 : 8));
       cur.stack.frame = *(uint64_t*) (stack + off);
 
       /* Change thread state, so the FDE emulator could see it */
@@ -540,12 +540,17 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
         return err;
     }
 
-    frame.start = stack + (last.stack.top - start);
-    frame.stop = stack + (cur.stack.top - start);
+    frame.start = stack + (cur.stack.top - start);
+    frame.stop = stack + (last.stack.top - start);
+    frame.frame = stack + (last.stack.frame - start);
 
     /* End of stack */
-    if (last.stack.top >= start + stack_size)
+    if (cur.stack.top >= start + stack_size)
       break;
+
+    /* Skip ip and rbp */
+    if (fde == NULL)
+      frame.start += cd_obj_is_x64(obj) ? 16 : 8;
 
     err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))

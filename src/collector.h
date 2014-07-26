@@ -17,6 +17,7 @@ struct cd_js_frame_s {
 
   char* start;
   char* stop;
+  char* frame;
   uint64_t ip;
 
   const char* name;

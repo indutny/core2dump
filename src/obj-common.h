@@ -31,6 +31,7 @@ struct cd_obj_thread_s {
 struct cd_frame_s {
   char* start;
   char* stop;
+  char* frame;
   uint64_t ip;
 
   const char* sym;

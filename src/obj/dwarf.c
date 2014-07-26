@@ -579,11 +579,15 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
                         uint64_t rip,
                         cd_dwarf_state_t* prev,
                         cd_dwarf_state_t* state) {
+  cd_error_t err;
   char* end;
   char* ptr;
   int x64;
   int ptr_size;
   int64_t data_align;
+  cd_dwarf_state_t* history;
+  int history_size;
+  int history_off;
 
   ptr = instrs;
   end = ptr + instr_len;
@@ -591,8 +595,12 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
   ptr_size = x64 ? 8 : 4;
   data_align = cie->data_align;
 
+  /* For remember/restore */
+  history = NULL;
+  history_size = 0;
+  history_off = 0;
+
   while (ptr < end) {
-    cd_error_t err;
     cd_dwarf_cfa_instr_t opcode;
     uint8_t hi;
     uint8_t lo;
@@ -686,7 +694,7 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
         break;
     }
     if (!cd_is_ok(err))
-      return err;
+      goto fatal;
 
     /* Execute opcode */
     switch (opcode) {
@@ -753,8 +761,28 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
         state->regs[arg0] = prev->regs[arg0];
         break;
       case kCDDwarfCFARememberState:
+        /* Grow history */
+        if (history_off == history_size) {
+          cd_dwarf_state_t* tmp;
+
+          history_size += 4;
+          tmp = realloc(history, sizeof(*tmp) * history_size);
+          if (tmp == NULL) {
+            err = cd_error_str(kCDErrNoMem, "dwarf state history");
+            goto fatal;
+          }
+
+          history = tmp;
+        }
+
+        history[history_off++] = *state;
+        break;
       case kCDDwarfCFARestoreState:
-        abort();
+        if (history_off == 0) {
+          err = cd_error_str(kCDErrDwarfOOB, "dwarf history is empty");
+          goto fatal;
+        }
+        *state = history[--history_off];
         break;
       default:
         break;
@@ -766,6 +794,10 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
   }
 
   return cd_ok();
+
+fatal:
+  free(history);
+  return err;
 }
 
 
