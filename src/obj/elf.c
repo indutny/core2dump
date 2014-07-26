@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #if defined(__linux__)
 # include <linux/elf.h>
+# define NT_GNU_BUILD_ID 3
 #else
 # include <elf.h>
 #endif  /* __linux__ */
@@ -58,6 +59,13 @@ static cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
                                                char* desc,
                                                void* arg);
 static int cd_elf_obj_is_core(cd_elf_obj_t* obj);
+static cd_error_t cd_elf_obj_get_build_id_iterate(cd_elf_obj_t* obj,
+                                                  Elf64_Nhdr* nhdr,
+                                                  char* desc,
+                                                  void* arg);
+static cd_error_t cd_elf_obj_get_build_id(cd_elf_obj_t* obj,
+                                          void** id,
+                                          int* len);
 
 
 struct cd_elf_obj_s {
@@ -849,6 +857,48 @@ cd_error_t cd_elf_obj_load_dsos(cd_elf_obj_t* obj) {
 }
 
 
+typedef struct cd_elf_obj_get_build_id_s cd_elf_obj_get_build_id_t;
+
+struct cd_elf_obj_get_build_id_s {
+  void** id;
+  int* len;
+};
+
+
+cd_error_t cd_elf_obj_get_build_id_iterate(cd_elf_obj_t* obj,
+                                           Elf64_Nhdr* nhdr,
+                                           char* desc,
+                                           void* arg) {
+  cd_elf_obj_get_build_id_t* st;
+
+  if (nhdr->n_type != NT_GNU_BUILD_ID)
+    return cd_ok();
+
+  st = (cd_elf_obj_get_build_id_t*) arg;
+  *st->id = (void*) desc;
+  *st->len = nhdr->n_descsz;
+
+  return cd_error(kCDErrSkip);
+}
+
+
+cd_error_t cd_elf_obj_get_build_id(cd_elf_obj_t* obj, void** id, int* len) {
+  cd_elf_obj_get_build_id_t st;
+  cd_error_t err;
+
+  st.id = id;
+  st.len = len;
+
+  err = cd_elf_obj_iterate_notes(obj, cd_elf_obj_get_build_id_iterate, &st);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+  else if (cd_is_ok(err))
+    return cd_error_str(kCDErrNotFound, "GNU_BUILD_ID");
+  else
+    return err;
+}
+
+
 cd_error_t cd_elf_obj_get_dbg(cd_elf_obj_t* obj,
                               void** res,
                               uint64_t* size,
@@ -861,6 +911,11 @@ cd_error_t cd_elf_obj_get_dbg(cd_elf_obj_t* obj,
 }
 
 
+cd_error_t cd_elf_obj_use_binary(cd_elf_obj_t* obj, cd_elf_obj_t* binary) {
+  return cd_ok();
+}
+
+
 cd_obj_method_t cd_elf_obj_method_def = {
   .obj_new = (cd_obj_method_new_t) cd_elf_obj_new,
   .obj_free = (cd_obj_method_free_t) cd_elf_obj_free,
@@ -868,7 +923,8 @@ cd_obj_method_t cd_elf_obj_method_def = {
   .obj_get_thread = (cd_obj_method_get_thread_t) cd_elf_obj_get_thread,
   .obj_iterate_syms = (cd_obj_method_iterate_syms_t) cd_elf_obj_iterate_syms,
   .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_elf_obj_iterate_segs,
-  .obj_get_dbg_frame = (cd_obj_method_get_dbg_frame_t) cd_elf_obj_get_dbg
+  .obj_get_dbg_frame = (cd_obj_method_get_dbg_frame_t) cd_elf_obj_get_dbg,
+  .obj_use_binary = (cd_obj_method_use_binary_t) cd_elf_obj_use_binary
 };
 
 cd_obj_method_t* cd_elf_obj_method = &cd_elf_obj_method_def;

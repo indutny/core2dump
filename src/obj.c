@@ -570,7 +570,21 @@ cd_error_t cd_obj_add_dso(cd_obj_t* obj, cd_obj_t* dso) {
 }
 
 
-cd_error_t cd_obj_prepend_dso(cd_obj_t* obj, cd_obj_t* dso) {
+cd_error_t cd_obj_add_binary(cd_obj_t* obj, cd_obj_t* dso) {
+  /*
+   * No other DSOs found when loading the core, use link info from the
+   * binary
+   */
+  if (cd_obj_is_core(obj) &&
+      QUEUE_EMPTY(&obj->member) &&
+      obj->method->obj_use_binary != NULL) {
+    cd_error_t err;
+
+    err = obj->method->obj_use_binary(obj, dso);
+    if (!cd_is_ok(err))
+      return err;
+  }
+
   QUEUE_INSERT_HEAD(&obj->dso, &dso->member);
   return cd_ok();
 }
