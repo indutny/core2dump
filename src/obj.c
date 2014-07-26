@@ -491,7 +491,9 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  while (cur.stack.top >= start && cur.stack.top < start + stack_size) {
+  while (cur.stack.top >= start &&
+         cur.stack.top < start + stack_size &&
+         cur.stack.frame > 0) {
     cd_sym_t* sym;
     cd_dwarf_fde_t* fde;
     cd_frame_t frame;
@@ -523,11 +525,11 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
 
       /* Next frame */
       cur.regs.ip =
-          *(uint64_t*) (stack + off - (cd_obj_is_x64(obj) ? 16 : 8));
+          *(uint64_t*) (stack + off + (cd_obj_is_x64(obj) ? 8 : 4));
       cur.stack.frame = *(uint64_t*) (stack + off);
 
       /* Change thread state, so the FDE emulator could see it */
-      cur.stack.top = cur.stack.frame + (cd_obj_is_x64(obj) ? 16 : 8);
+      cur.stack.top = last.stack.frame + (cd_obj_is_x64(obj) ? 16 : 8);
     } else {
       /* Use FDE to figure out thread state before entering the proc */
       err = cd_dwarf_fde_run(fde,

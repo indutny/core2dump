@@ -793,6 +793,7 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
       break;
   }
 
+  free(history);
   return cd_ok();
 
 fatal:
@@ -895,6 +896,9 @@ cd_error_t cd_dwarf_load(cd_dwarf_state_t* state,
         *res = *oval;
       }
       /* No operation */
+      break;
+    case kCDDwarfLocUndefined:
+      *res = 0xdeadbeef;
       break;
     default:
       return cd_error_str(kCDErrDwarfNoCFA, "FDE's IP uses invalid loc type");
