@@ -534,7 +534,6 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cfa_t* cfa, char** data, uint64_t size) {
     goto fatal;
   }
 
-done:
   QUEUE_INSERT_TAIL(&cie->fdes, &fde->member);
   return cd_ok();
 
