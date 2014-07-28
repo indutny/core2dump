@@ -5,7 +5,8 @@
 #include "queue.h"
 #include "state.h"
 
-typedef void (*cd_iterate_stack_cb)(char* start,
+typedef void (*cd_iterate_stack_cb)(cd_state_t* state,
+                                    char* start,
                                     char* stop,
                                     uint64_t ip,
                                     void* arg);

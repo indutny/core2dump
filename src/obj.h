@@ -35,6 +35,10 @@ int cd_obj_is_core(cd_obj_t* obj);
 
 cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res);
 cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr);
+cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
+                            uint64_t addr,
+                            const char** sym,
+                            int* sym_len);
 cd_error_t cd_obj_get_thread(cd_obj_t* obj,
                              unsigned int index,
                              cd_obj_thread_t* thread);

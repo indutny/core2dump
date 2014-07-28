@@ -33,6 +33,25 @@ void cd_collector_destroy(cd_state_t* state) {
 }
 
 
+static void iterate_cb(cd_state_t* state,
+                       char* start,
+                       char* stop,
+                       uint64_t ip,
+                       void* arg) {
+  cd_error_t err;
+  const char* sym;
+  int sym_len;
+
+  err = cd_obj_lookup_ip(state->binary, ip, &sym, &sym_len);
+  if (!cd_is_ok(err)) {
+    fprintf(stdout, "not found %llx\n", ip);
+    return;
+  }
+
+  fprintf(stdout, "%llx -> %.*s\n", ip, sym_len, sym);
+}
+
+
 cd_error_t cd_collect_roots(cd_state_t* state) {
   cd_error_t err;
   uint64_t off;
@@ -83,7 +102,7 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                  NULL);
   }
 
-  return cd_ok();
+  return cd_iterate_stack(state, iterate_cb, NULL);
 }
 
 
@@ -121,7 +140,7 @@ cd_error_t cd_iterate_stack(cd_state_t* state,
   frame_end = 0;
   ip = thread.regs.ip;
   while (frame_start < stack_size) {
-    cb(stack + frame_start, stack + frame_end, ip, arg);
+    cb(state, stack + frame_start, stack + frame_end, ip, arg);
 
     /* Next frame */
     ip = *(uint64_t*) (stack + frame_start + state->ptr_size);
@@ -135,5 +154,5 @@ cd_error_t cd_iterate_stack(cd_state_t* state,
       break;
   }
 
-  return cd_error(kCDErrNotFound);
+  return cd_error(kCDErrOk);
 }

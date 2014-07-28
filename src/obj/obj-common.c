@@ -26,15 +26,14 @@ static cd_error_t cd_obj_fill_segs(struct cd_obj_s* obj,
                                    void* arg);
 static cd_error_t cd_obj_init_segments(cd_common_obj_t* cobj);
 static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
-static int cd_symbol_sort(uint64_t a, uint64_t b);
-static cd_error_t cd_obj_init_syms(struct cd_obj_s* obj,
-                                   cd_sym_t* sym,
-                                   void* arg);
+static int cd_symbol_sort(const cd_sym_t* a, const cd_sym_t* b);
+static cd_error_t cd_obj_init_syms(cd_common_obj_t* obj);
+static cd_error_t cd_obj_insert_syms(struct cd_obj_s* obj,
+                                     cd_sym_t* sym,
+                                     void* arg);
 
 
-cd_error_t cd_obj_init_syms(struct cd_obj_s* obj,
-                            cd_sym_t* sym,
-                            void* arg) {
+cd_error_t cd_obj_insert_syms(struct cd_obj_s* obj, cd_sym_t* sym, void* arg) {
   cd_common_obj_t* cobj;
   cd_sym_t* copy;
 
@@ -53,10 +52,29 @@ cd_error_t cd_obj_init_syms(struct cd_obj_s* obj,
   copy = malloc(sizeof(*copy));
   *copy = *sym;
 
-  if (cd_splay_insert(&cobj->sym_splay, copy) != 0)
-    return cd_error_str(kCDErrNoMem, "sym_splay");
+  if (cd_splay_insert(&cobj->sym_splay, copy) != 0) {
+    free(copy);
+    /* Most-likely a duplicate */
+    return cd_ok();
+  }
 
   return cd_ok();
+}
+
+
+cd_error_t cd_obj_init_syms(cd_common_obj_t* obj) {
+  if (obj->has_syms)
+    return cd_ok();
+
+  cd_splay_init(&obj->sym_splay,
+                (int (*)(const void*, const void*)) cd_symbol_sort);
+  obj->sym_splay.allocated = 1;
+
+  if (cd_hashmap_init(&obj->syms, kCDSymtabInitialSize, 0) != 0)
+    return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
+  obj->has_syms = 1;
+
+  return cd_obj_iterate_syms((struct cd_obj_s*) obj, cd_obj_insert_syms, NULL);
 }
 
 
@@ -69,19 +87,9 @@ cd_error_t cd_obj_get_sym(struct cd_obj_s* obj,
 
   cobj = (cd_common_obj_t*) obj;
 
-  if (!cobj->has_syms) {
-    cd_splay_init(&cobj->sym_splay,
-                  (int (*)(const void*, const void*)) cd_symbol_sort);
-    cobj->sym_splay.allocated = 1;
-
-    if (cd_hashmap_init(&cobj->syms, kCDSymtabInitialSize, 0) != 0)
-      return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
-    cobj->has_syms = 1;
-
-    err = cd_obj_iterate_syms(obj, cd_obj_init_syms, NULL);
-    if (!cd_is_ok(err))
-      return err;
-  }
+  err = cd_obj_init_syms(cobj);
+  if (!cd_is_ok(err))
+    return err;
 
   assert(sizeof(void*) == sizeof(*addr));
   res = cd_hashmap_get(&cobj->syms, sym, strlen(sym));
@@ -189,8 +197,8 @@ int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b) {
 }
 
 
-int cd_symbol_sort(uint64_t a, uint64_t b) {
-  return a > b ? 1 : a == b ? 0 : -1;
+int cd_symbol_sort(const cd_sym_t* a, const cd_sym_t* b) {
+  return a->value > b->value ? 1 : a->value == b->value ? 0 : -1;
 }
 
 
@@ -227,4 +235,30 @@ int cd_obj_is_x64(struct cd_obj_s* obj) {
 
   cobj = (cd_common_obj_t*) obj;
   return cobj->is_x64;
+}
+
+
+cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
+                            uint64_t addr,
+                            const char** sym,
+                            int* sym_len) {
+  cd_error_t err;
+  cd_sym_t idx;
+  cd_sym_t* r;
+  cd_common_obj_t* cobj;
+
+  cobj = (cd_common_obj_t*) obj;
+  err = cd_obj_init_syms(cobj);
+  if (!cd_is_ok(err))
+    return err;
+
+  idx.value = addr;
+  r = cd_splay_find(&cobj->sym_splay, &idx);
+  if (r == NULL)
+    return cd_error(kCDErrNotFound);
+
+  *sym = r->name;
+  *sym_len = r->nlen;
+
+  return cd_ok();
 }
