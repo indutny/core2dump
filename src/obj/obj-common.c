@@ -24,6 +24,9 @@ static cd_error_t cd_obj_count_segs(struct cd_obj_s* obj,
 static cd_error_t cd_obj_fill_segs(struct cd_obj_s* obj,
                                    cd_segment_t* seg,
                                    void* arg);
+static cd_error_t cd_obj_insert_seg_ends(struct cd_obj_s* obj,
+                                         cd_segment_t* seg,
+                                         void* arg);
 static cd_error_t cd_obj_init_segments(cd_common_obj_t* cobj);
 static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
 static int cd_symbol_sort(const cd_sym_t* a, const cd_sym_t* b);
@@ -50,19 +53,42 @@ cd_error_t cd_obj_insert_syms(struct cd_obj_s* obj, cd_sym_t* sym, void* arg) {
   }
 
   copy = malloc(sizeof(*copy));
+  if (copy == NULL)
+    return cd_error_str(kCDErrNoMem, "cd_sym_t");
   *copy = *sym;
 
-  if (cd_splay_insert(&cobj->sym_splay, copy) != 0) {
+  if (cd_splay_insert(&cobj->sym_splay, copy) != 0)
     free(copy);
-    /* Most-likely a duplicate */
-    return cd_ok();
-  }
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_obj_insert_seg_ends(struct cd_obj_s* obj,
+                                  cd_segment_t* seg,
+                                  void* arg) {
+  cd_common_obj_t* cobj;
+  cd_sym_t* copy;
+
+  cobj = (cd_common_obj_t*) obj;
+
+  copy = malloc(sizeof(*copy));
+  if (copy == NULL)
+    return cd_error_str(kCDErrNoMem, "cd_sym_t");
+  copy->name = NULL;
+  copy->nlen = 0;
+  copy->value = seg->end;
+
+  if (cd_splay_insert(&cobj->sym_splay, copy) != 0)
+    free(copy);
 
   return cd_ok();
 }
 
 
 cd_error_t cd_obj_init_syms(cd_common_obj_t* obj) {
+  cd_error_t err;
+
   if (obj->has_syms)
     return cd_ok();
 
@@ -74,7 +100,13 @@ cd_error_t cd_obj_init_syms(cd_common_obj_t* obj) {
     return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
   obj->has_syms = 1;
 
-  return cd_obj_iterate_syms((struct cd_obj_s*) obj, cd_obj_insert_syms, NULL);
+  err = cd_obj_iterate_syms((struct cd_obj_s*) obj, cd_obj_insert_syms, NULL);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_obj_iterate_segs((struct cd_obj_s*) obj,
+                             cd_obj_insert_seg_ends,
+                             NULL);
 }
 
 
@@ -257,8 +289,12 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   if (r == NULL)
     return cd_error(kCDErrNotFound);
 
+  if (r->name == NULL && r->nlen == 0)
+    return cd_error(kCDErrNotFound);
+
   *sym = r->name;
   *sym_len = r->nlen;
+
 
   return cd_ok();
 }
