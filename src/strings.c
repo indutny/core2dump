@@ -54,7 +54,8 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   /* Check if the string is already known */
   item = cd_hashmap_get(&strings->map, str, len);
   if (item != NULL) {
-    *index = item->index;
+    if (index != NULL)
+      *index = item->index;
     if (res != NULL)
       *res = item->str;
 
@@ -81,7 +82,8 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
 
   if (res != NULL)
     *res = item->str;
-  *index = item->index;
+  if (index != NULL)
+    *index = item->index;
 
   return cd_ok();
 }

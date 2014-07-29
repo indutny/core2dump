@@ -35,8 +35,8 @@
 
 /* Untag SMI */
 #define V8_SMI(ptr)                                                           \
-    ((uint32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                    \
-                                      cd_v8_SmiTagMask)))                     \
+    ((int32_t) ((intptr_t) (ptr) >> (cd_v8_SmiShiftSize +                     \
+                                     cd_v8_SmiTagMask)))                      \
 
 /* Tag SMI */
 #define V8_TAG_SMI(num)                                                       \

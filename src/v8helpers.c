@@ -124,9 +124,11 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
                          void* fn,
                          const char** res,
                          int* index) {
+  cd_error_t err;
   void** ptr;
   void* sh;
   void* name;
+  const char* cname;
 
   /* Load shared function info to lookup name */
   V8_CORE_PTR(fn, cd_v8_class_JSFunction__shared__SharedFunctionInfo, ptr);
@@ -135,7 +137,22 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
   V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
   name = *ptr;
 
-  return cd_v8_to_cstr(state, name, res, index);
+  err = cd_v8_to_cstr(state, name, &cname, index);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Empty name - try inferred name */
+  if (cname == NULL || cname[0] == '\0') {
+    V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__inferred_name__String, ptr);
+    name = *ptr;
+
+    return cd_v8_to_cstr(state, name, res, index);
+  }
+
+  if (res != NULL)
+    *res = cname;
+
+  return cd_ok();
 }
 
 

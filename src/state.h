@@ -15,6 +15,9 @@ struct cd_state_s {
   int output;
   int ptr_size;
 
+  /* Collector's stuff */
+  QUEUE frames;
+
   QUEUE queue;
   struct {
     int id;

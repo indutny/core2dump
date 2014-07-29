@@ -155,8 +155,8 @@ cd_error_t cd_visit_roots(cd_state_t* state) {
   while (!QUEUE_EMPTY(&state->queue) != 0) {
     cd_node_t* node;
 
-    /* Pick last */
-    q = QUEUE_PREV(&state->queue);
+    /* Pick first */
+    q = QUEUE_NEXT(&state->queue);
     QUEUE_REMOVE(q);
 
     node = container_of(q, cd_node_t, member);
