@@ -572,7 +572,7 @@ cd_error_t cd_tag_obj_property(cd_state_t* state,
   if (key_type >= cd_v8_FirstNonstringType)
     return cd_ok();
 
-  err = cd_v8_to_cstr(state, key, NULL, &key_name);
+  err = cd_v8_to_cstr(state, key, NULL, NULL, &key_name);
   if (!cd_is_ok(err))
     return err;
 
@@ -825,7 +825,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
 
   /* Mimique V8HeapExplorer::AddEntry */
   if (type == T(JSFunction, JS_FUNCTION)) {
-    err = cd_v8_fn_name(state, node->obj, NULL, &name);
+    err = cd_v8_fn_name(state, node->obj, NULL, NULL, &name);
 
     node->type = kCDNodeClosure;
   } else if (type == T(JSRegExp, JS_REGEXP)) {
@@ -845,7 +845,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
                 ptr);
     pattern = *ptr;
 
-    err = cd_v8_to_cstr(state, pattern, NULL, &name);
+    err = cd_v8_to_cstr(state, pattern, NULL, NULL, &name);
 
     node->type = kCDNodeRegExp;
   } else if (type == T(JSObject, JS_OBJECT) ||
@@ -868,7 +868,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
       return err;
 
     if (ctype == T(JSFunction, JS_FUNCTION)) {
-      err = cd_v8_fn_name(state, cons, NULL, &name);
+      err = cd_v8_fn_name(state, cons, NULL, NULL, &name);
     } else {
       err = cd_strings_copy(&state->strings,
                             NULL,
@@ -898,7 +898,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
                             15);
       node->type = kCDNodeSlicedString;
     } else {
-      err = cd_v8_to_cstr(state, node->obj, NULL, &name);
+      err = cd_v8_to_cstr(state, node->obj, NULL, NULL, &name);
       node->type = kCDNodeString;
     }
   } else if (type == T(SharedFunctionInfo, SHARED_FUNCTION_INFO)) {
@@ -907,14 +907,14 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
     V8_CORE_PTR(node->obj, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
     sname = *ptr;
 
-    err = cd_v8_to_cstr(state, sname, NULL, &name);
+    err = cd_v8_to_cstr(state, sname, NULL, NULL, &name);
     node->type = kCDNodeCode;
   } else if (type == T(Script, SCRIPT)) {
     void* sname;
 
     V8_CORE_PTR(node->obj, cd_v8_class_Script__name__Object, ptr);
     sname = *ptr;
-    err = cd_v8_to_cstr(state, sname, NULL, &name);
+    err = cd_v8_to_cstr(state, sname, NULL, NULL, &name);
     node->type = kCDNodeCode;
   } else if (type == T(HeapNumber, HEAP_NUMBER)) {
     err = cd_strings_copy(&state->strings,

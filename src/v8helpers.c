@@ -77,6 +77,7 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
 cd_error_t cd_v8_to_cstr(cd_state_t* state,
                          void* str,
                          const char** res,
+                         int* len,
                          int* index) {
   void** ptr;
   int type;
@@ -108,11 +109,54 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
       return cd_error(kCDErrNotString);
 
     length = V8_SMI(*ptr);
+  } else if (repr == cd_v8_ConsStringTag) {
+    void* first;
+    void* second;
+    const char* cfirst;
+    const char* csecond;
+    int flen;
+    int slen;
+    static char buf[16384];
+    int sz;
+
+    V8_CORE_PTR(str, cd_v8_class_ConsString__first__String, ptr);
+    first = *ptr;
+    V8_CORE_PTR(str, cd_v8_class_ConsString__second__String, ptr);
+    second = *ptr;
+
+    err = cd_v8_to_cstr(state, first, &cfirst, &flen, NULL);
+    if (!cd_is_ok(err))
+      return err;
+
+    err = cd_v8_to_cstr(state, second, &csecond, &slen, NULL);
+    if (!cd_is_ok(err))
+      return err;
+
+    sz = (int) sizeof(buf) - 1;
+    if (flen < sz) {
+      memcpy(buf, cfirst, flen);
+      sz -= flen;
+      if (slen < sz) {
+        length = flen + slen;
+        memcpy(buf + flen, csecond, slen);
+      } else {
+        length = sz;
+        memcpy(buf + flen, csecond, sz);
+      }
+    } else {
+      length = sz;
+      memcpy(buf, cfirst, sz);
+    }
+    buf[length] = '\0';
+
+    data = buf;
   } else {
     data = NULL;
     length = 0;
   }
 
+  if (len != NULL)
+    *len = length;
   if (data == NULL)
     return cd_error(kCDErrNotFound);
 
@@ -123,6 +167,7 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
 cd_error_t cd_v8_fn_name(cd_state_t* state,
                          void* fn,
                          const char** res,
+                         int* len,
                          int* index) {
   cd_error_t err;
   void** ptr;
@@ -137,7 +182,7 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
   V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__name__Object, ptr);
   name = *ptr;
 
-  err = cd_v8_to_cstr(state, name, &cname, index);
+  err = cd_v8_to_cstr(state, name, &cname, len, index);
   if (!cd_is_ok(err))
     return err;
 
@@ -146,7 +191,7 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
     V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__inferred_name__String, ptr);
     name = *ptr;
 
-    return cd_v8_to_cstr(state, name, res, index);
+    return cd_v8_to_cstr(state, name, res, len, index);
   }
 
   if (res != NULL)

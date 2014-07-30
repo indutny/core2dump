@@ -17,6 +17,7 @@ struct cd_state_s {
 
   /* Collector's stuff */
   QUEUE frames;
+  int frame_count;
 
   QUEUE queue;
   struct {

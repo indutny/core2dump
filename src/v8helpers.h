@@ -55,10 +55,12 @@ cd_error_t cd_v8_get_obj_size(cd_state_t* state,
 cd_error_t cd_v8_to_cstr(cd_state_t* state,
                          void* str,
                          const char** res,
+                         int* len,
                          int* index);
 cd_error_t cd_v8_fn_name(cd_state_t* state,
                          void* fn,
                          const char** res,
+                         int* len,
                          int* index);
 cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
                                     void* obj,

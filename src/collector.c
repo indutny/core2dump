@@ -24,6 +24,7 @@ static cd_error_t cd_collect_v8_frame(cd_state_t* state,
 cd_error_t cd_collector_init(cd_state_t* state) {
   QUEUE_INIT(&state->queue);
   QUEUE_INIT(&state->frames);
+  state->frame_count = 0;
   return cd_ok();
 }
 
@@ -44,7 +45,7 @@ void cd_collector_destroy(cd_state_t* state) {
     QUEUE* q;
     cd_stack_frame_t* frame;
 
-    q = QUEUE_HEAD(&state->queue);
+    q = QUEUE_HEAD(&state->frames);
     QUEUE_REMOVE(q);
 
     frame = container_of(q, cd_stack_frame_t, member);
@@ -69,10 +70,8 @@ void cd_collect_frame(cd_state_t* state, cd_stack_frame_t* sframe, void* arg) {
                          frame->ip,
                          &frame->name,
                          &frame->name_len);
-  if (cd_is_ok(err)) {
-    fprintf(stdout, "%.*s\n", frame->name_len, frame->name);
+  if (cd_is_ok(err))
     goto done;
-  }
 
   /* Inspect v8 frame */
   frame->name = NULL;
@@ -83,10 +82,11 @@ void cd_collect_frame(cd_state_t* state, cd_stack_frame_t* sframe, void* arg) {
     free(frame);
     return;
   }
-  fprintf(stdout, "%.*s\n", frame->name_len, frame->name);
 
 done:
+  fprintf(stdout, "%p -> %.*s\n", frame->ip, frame->name_len, frame->name);
   QUEUE_INSERT_TAIL(&state->frames, &frame->member);
+  state->frame_count++;
   return;
 }
 
@@ -106,9 +106,10 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
   void* marker;
   void* fn;
   void* args;
-  void* list[3];
   int type;
   unsigned int i;
+  cd_obj_thread_t thread;
+  cd_node_t* fn_node;
 
   ctx = *(void**) (frame->start + cd_v8_off_fp_context);
   if (V8_IS_SMI(ctx) &&
@@ -145,13 +146,30 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
   if (!cd_is_ok(err))
     return err;
 
-  list[0] = fn;
-  list[1] = args;
-  list[2] = ctx;
-  for (i = 0; i < ARRAY_SIZE(list); i++) {
+  err = cd_queue_ptr(state,
+                     &state->nodes.root,
+                     fn,
+                     NULL,
+                     kCDEdgeElement,
+                     state->frame_count,
+                     0,
+                     &fn_node);
+  if (!cd_is_ok(err))
+    fn_node = &state->nodes.root;
+
+  /* Visit all pointers in a frame, except fn */
+  for (i = 0;
+      frame->start != frame->stop;
+      frame->start -= state->ptr_size, i++) {
+    void* ptr;
+
+    ptr = *(void**) frame->start;
+    if (ptr == fn)
+      continue;
+
     cd_queue_ptr(state,
-                 &state->nodes.root,
-                 list[i],
+                 fn_node,
+                 ptr,
                  NULL,
                  kCDEdgeElement,
                  i,
@@ -159,10 +177,33 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
                  NULL);
   }
 
+  /* First frame - collect registers too */
+  if (state->frame_count == 0) {
+    unsigned int j;
+    err = cd_obj_get_thread(state->core, 0, &thread);
+    if (!cd_is_ok(err))
+      return err;
+
+    /* Visit registers */
+    for (j = 0; j < thread.regs.count; j++) {
+      void* ptr;
+
+      ptr = (void*) (intptr_t) thread.regs.values[j];
+      cd_queue_ptr(state,
+                   fn_node,
+                   ptr,
+                   NULL,
+                   kCDEdgeElement,
+                   i + j,
+                   0,
+                   NULL);
+    }
+  }
+
   if (type == CD_V8_TYPE(Code, CODE))
     CFRAME(frame, "<internal code>");
 
-  err = cd_v8_fn_name(state, fn, &frame->name, NULL);
+  err = cd_v8_fn_name(state, fn, &frame->name, NULL, NULL);
   if (!cd_is_ok(err))
     return err;
 
@@ -178,29 +219,6 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
 
 
 cd_error_t cd_collect_roots(cd_state_t* state) {
-  cd_error_t err;
-  unsigned int i;
-  cd_obj_thread_t thread;
-
-  err = cd_obj_get_thread(state->core, 0, &thread);
-  if (!cd_is_ok(err))
-    return err;
-
-  /* Visit registers */
-  for (i = 0; i < thread.regs.count; i++) {
-    void* ptr;
-
-    ptr = (void*) (intptr_t) thread.regs.values[i];
-    cd_queue_ptr(state,
-                 &state->nodes.root,
-                 ptr,
-                 NULL,
-                 kCDEdgeElement,
-                 i,
-                 0,
-                 NULL);
-  }
-
   return cd_iterate_stack(state, cd_collect_frame, NULL);
 }
 
