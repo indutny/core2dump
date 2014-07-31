@@ -825,7 +825,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
 
   /* Mimique V8HeapExplorer::AddEntry */
   if (type == T(JSFunction, JS_FUNCTION)) {
-    err = cd_v8_fn_name(state, node->obj, NULL, NULL, &name);
+    err = cd_v8_fn_info(state, node->obj, NULL, NULL, &name, NULL);
 
     node->type = kCDNodeClosure;
   } else if (type == T(JSRegExp, JS_REGEXP)) {
@@ -868,7 +868,7 @@ cd_error_t cd_add_node(cd_state_t* state, cd_node_t* node) {
       return err;
 
     if (ctype == T(JSFunction, JS_FUNCTION)) {
-      err = cd_v8_fn_name(state, cons, NULL, NULL, &name);
+      err = cd_v8_fn_info(state, cons, NULL, NULL, &name, NULL);
     } else {
       err = cd_strings_copy(&state->strings,
                             NULL,

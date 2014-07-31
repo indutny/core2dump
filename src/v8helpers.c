@@ -155,11 +155,12 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
 }
 
 
-cd_error_t cd_v8_fn_name(cd_state_t* state,
+cd_error_t cd_v8_fn_info(cd_state_t* state,
                          void* fn,
                          const char** res,
                          int* len,
-                         int* index) {
+                         int* index,
+                         cd_script_t* script) {
   cd_error_t err;
   void** ptr;
   void* sh;
@@ -182,11 +183,47 @@ cd_error_t cd_v8_fn_name(cd_state_t* state,
     V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__inferred_name__String, ptr);
     name = *ptr;
 
-    return cd_v8_to_cstr(state, name, res, len, index);
+    err = cd_v8_to_cstr(state, name, &cname, len, index);
+    if (!cd_is_ok(err))
+      return err;
   }
 
   if (res != NULL)
     *res = cname;
+
+  /* Get script info */
+  V8_CORE_PTR(sh, cd_v8_class_SharedFunctionInfo__script__Object, ptr);
+  if (script == NULL)
+    return cd_ok();
+
+  return cd_v8_script_info(state, *ptr, script);
+}
+
+
+cd_error_t cd_v8_script_info(cd_state_t* state, void* obj, cd_script_t* res) {
+  void** ptr;
+  cd_error_t err;
+
+  res->ptr = obj;
+  V8_CORE_PTR(obj, cd_v8_class_Script__name__Object, ptr);
+  err = cd_v8_to_cstr(state, *ptr, &res->name, &res->name_len, &res->name_idx);
+  if (!cd_is_ok(err))
+    return err;
+
+  V8_CORE_PTR(obj, cd_v8_class_Script__id__Smi, ptr);
+  if (!V8_IS_SMI(*ptr))
+    return cd_error_str(kCDErrNotSMI, "script.id");
+  res->id = V8_SMI(*ptr);
+
+  V8_CORE_PTR(obj, cd_v8_class_Script__line_offset__SMI, ptr);
+  if (!V8_IS_SMI(*ptr))
+    return cd_error_str(kCDErrNotSMI, "script.line");
+  res->line = V8_SMI(*ptr);
+
+  V8_CORE_PTR(obj, cd_v8_class_Script__column_offset__SMI, ptr);
+  if (!V8_IS_SMI(*ptr))
+    return cd_error_str(kCDErrNotSMI, "script.column");
+  res->column = V8_SMI(*ptr);
 
   return cd_ok();
 }

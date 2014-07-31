@@ -3,6 +3,7 @@
 
 #include "error.h"
 #include "queue.h"
+#include "v8helpers.h"
 
 #include <stdint.h>
 
@@ -23,6 +24,8 @@ struct cd_stack_frame_s {
 
   const char* name;
   int name_len;
+
+  cd_script_t script;
 };
 
 /* Collect roots on the stack of the core file */

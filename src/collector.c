@@ -203,7 +203,7 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_stack_frame_t* frame) {
   if (type == CD_V8_TYPE(Code, CODE))
     CFRAME(frame, "<internal code>");
 
-  err = cd_v8_fn_name(state, fn, &frame->name, NULL, NULL);
+  err = cd_v8_fn_info(state, fn, &frame->name, NULL, NULL, &frame->script);
   if (!cd_is_ok(err))
     return err;
 

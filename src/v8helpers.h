@@ -43,6 +43,20 @@
     ((void*) (((intptr_t) (num) << (cd_v8_SmiShiftSize + cd_v8_SmiTagMask)) | \
         cd_v8_SmiTag))                                                        \
 
+typedef struct cd_script_s cd_script_t;
+
+struct cd_script_s {
+  void* ptr;
+  int id;
+
+  const char* name;
+  int name_len;
+  int name_idx;
+
+  int line;
+  int column;
+};
+
 cd_error_t cd_v8_get_obj_type(cd_state_t* state,
                               void* obj,
                               void* map,
@@ -57,11 +71,13 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
                          const char** res,
                          int* len,
                          int* index);
-cd_error_t cd_v8_fn_name(cd_state_t* state,
+cd_error_t cd_v8_fn_info(cd_state_t* state,
                          void* fn,
                          const char** res,
                          int* len,
-                         int* index);
+                         int* index,
+                         cd_script_t* script);
+cd_error_t cd_v8_script_info(cd_state_t* state, void* obj, cd_script_t* res);
 cd_error_t cd_v8_obj_has_fast_props(cd_state_t* state,
                                     void* obj,
                                     void* map,
