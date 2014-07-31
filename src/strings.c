@@ -11,6 +11,10 @@
 static const int kCDStringsInitialSize = 65536;
 
 
+static cd_error_t cd_strings_add(cd_strings_t* strings,
+                                 cd_strings_item_t* item,
+                                 const char** res,
+                                 int* index);
 static void cd_strings_print_json(cd_strings_t* strings,
                                   cd_writebuf_t* buf,
                                   cd_strings_item_t* item);
@@ -43,12 +47,35 @@ void cd_strings_destroy(cd_strings_t* strings) {
 }
 
 
+cd_error_t cd_strings_add(cd_strings_t* strings,
+                          cd_strings_item_t* item,
+                          const char** res,
+                          int* index) {
+  int r;
+
+  r = cd_hashmap_insert(&strings->map, item->str, item->len, item);
+  if (r != 0) {
+    free(item);
+    return cd_error_str(kCDErrNoMem, "hashmap insert strings.map failure");
+  }
+  item->index = strings->count++;
+
+  QUEUE_INSERT_TAIL(&strings->queue, &item->member);
+
+  if (res != NULL)
+    *res = item->str;
+  if (index != NULL)
+    *index = item->index;
+
+  return cd_ok();
+}
+
+
 cd_error_t cd_strings_copy(cd_strings_t* strings,
                            const char** res,
                            int* index,
                            const char* str,
                            int len) {
-  int r;
   cd_strings_item_t* item;
 
   /* Check if the string is already known */
@@ -68,24 +95,48 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
   if (item == NULL)
     return cd_error_str(kCDErrNoMem, "strdup failure");
   memcpy(item->str, str, len);
+  item->len = len;
+  item->str[item->len] = '\0';
 
-  r = cd_hashmap_insert(&strings->map, str, len, item);
-  if (r != 0) {
+  return cd_strings_add(strings, item, res, index);
+}
+
+
+cd_error_t cd_strings_concat(cd_strings_t* strings,
+                             const char** res,
+                             int* index,
+                             const char* left,
+                             int left_len,
+                             const char* right,
+                             int right_len) {
+  cd_strings_item_t* item;
+  cd_strings_item_t* cached;
+
+  /* Duplicate string and insert into the list and hashmap */
+  item = malloc(sizeof(*item) + left_len + right_len + 1);
+  if (item == NULL)
+    return cd_error_str(kCDErrNoMem, "cd_strings_item_t concat");
+
+  memcpy(item->str, left, left_len);
+  memcpy(item->str + left_len, right, right_len);
+  item->len = left_len + right_len;
+  item->str[item->len] = '\0';
+
+  /* Check if the string is already known */
+  cached = cd_hashmap_get(&strings->map, item->str, item->len);
+  if (cached != NULL) {
     free(item);
-    return cd_error_str(kCDErrNoMem, "hashmap insert strings.map failure");
+    if (index != NULL)
+      *index = cached->index;
+    if (res != NULL)
+      *res = cached->str;
+
+    /* Return existing string */
+    return cd_ok();
   }
 
-  item->str[len] = '\0';
-  item->len = len;
-  item->index = strings->count++;
-  QUEUE_INSERT_TAIL(&strings->queue, &item->member);
 
-  if (res != NULL)
-    *res = item->str;
-  if (index != NULL)
-    *index = item->index;
-
-  return cd_ok();
+  return cd_strings_add(strings, item, res, index);
 }
 
 

@@ -116,8 +116,6 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
     const char* csecond;
     int flen;
     int slen;
-    static char buf[16384];
-    int sz;
 
     V8_CORE_PTR(str, cd_v8_class_ConsString__first__String, ptr);
     first = *ptr;
@@ -132,24 +130,17 @@ cd_error_t cd_v8_to_cstr(cd_state_t* state,
     if (!cd_is_ok(err))
       return err;
 
-    sz = (int) sizeof(buf) - 1;
-    if (flen < sz) {
-      memcpy(buf, cfirst, flen);
-      sz -= flen;
-      if (slen < sz) {
-        length = flen + slen;
-        memcpy(buf + flen, csecond, slen);
-      } else {
-        length = sz;
-        memcpy(buf + flen, csecond, sz);
-      }
-    } else {
-      length = sz;
-      memcpy(buf, cfirst, sz);
-    }
-    buf[length] = '\0';
+    length = flen + slen;
+    if (len != NULL)
+      *len = length;
 
-    data = buf;
+    return cd_strings_concat(&state->strings,
+                             res,
+                             index,
+                             cfirst,
+                             flen,
+                             csecond,
+                             slen);
   } else {
     data = NULL;
     length = 0;

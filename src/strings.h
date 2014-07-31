@@ -30,6 +30,13 @@ cd_error_t cd_strings_copy(cd_strings_t* strings,
                            int* index,
                            const char* str,
                            int len);
+cd_error_t cd_strings_concat(cd_strings_t* strings,
+                             const char** res,
+                             int* index,
+                             const char* left,
+                             int left_len,
+                             const char* right,
+                             int right_len);
 void cd_strings_print(cd_strings_t* strings, cd_writebuf_t* buf);
 
 #endif  /* SRC_STRINGS_H_ */
