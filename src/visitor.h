@@ -46,6 +46,9 @@ struct cd_node_s {
   void* map;
   int v8_type;
 
+  /* Id of the trace */
+  int trace;
+
   cd_node_type_t type;
   int id;
   int name;

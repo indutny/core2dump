@@ -316,7 +316,7 @@ void cd_print_nodes(cd_state_t* state, cd_writebuf_t* buf) {
         node->id,
         node->size,
         node->edges.outgoing_count,
-        0);
+        node->trace);
 
     if (q != QUEUE_PREV(&state->nodes.list))
       cd_writebuf_put(buf, ",\n");
