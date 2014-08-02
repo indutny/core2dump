@@ -269,9 +269,6 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
   Elf64_Xword size;
   Elf64_Xword entsize;
 
-  if (obj->has_syms)
-    return cd_ok();
-
   /* Find string table */
   err = cd_obj_get_section(obj, ".strtab", &strtab);
   if (!cd_is_ok(err))
