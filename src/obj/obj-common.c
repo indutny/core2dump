@@ -27,7 +27,6 @@ static cd_error_t cd_obj_fill_segs(struct cd_obj_s* obj,
 static cd_error_t cd_obj_insert_seg_ends(struct cd_obj_s* obj,
                                          cd_segment_t* seg,
                                          void* arg);
-static cd_error_t cd_obj_init_segments(cd_common_obj_t* cobj);
 static int cd_segment_sort(const cd_segment_t* a, const cd_segment_t* b);
 static int cd_symbol_sort(const cd_sym_t* a, const cd_sym_t* b);
 static cd_error_t cd_obj_init_syms(cd_common_obj_t* obj);
@@ -165,30 +164,31 @@ cd_error_t cd_obj_fill_segs(struct cd_obj_s* obj,
 }
 
 
-cd_error_t cd_obj_init_segments(cd_common_obj_t* obj) {
+cd_error_t cd_obj_init_segments(cd_obj_t* obj) {
   cd_error_t err;
   cd_segment_t* seg;
+  cd_common_obj_t* cobj;
+
+  cobj = (cd_common_obj_t*) obj;
 
   /* Already initialized */
-  if (obj->segment_count != -1)
+  if (cobj->segment_count != -1)
     return cd_ok();
 
-  cd_splay_init(&obj->seg_splay,
+  cd_splay_init(&cobj->seg_splay,
                 (int (*)(const void*, const void*)) cd_segment_sort);
-  obj->segment_count = 0;
+  cobj->segment_count = 0;
 
-  err = cd_obj_iterate_segs((struct cd_obj_s*) obj,
-                            cd_obj_count_segs,
-                            &obj->segment_count);
+  err = cd_obj_iterate_segs(obj, cd_obj_count_segs, &cobj->segment_count);
   if (!cd_is_ok(err))
     return err;
 
-  obj->segments = calloc(obj->segment_count, sizeof(*obj->segments));
-  if (obj->segments == NULL)
+  cobj->segments = calloc(cobj->segment_count, sizeof(*cobj->segments));
+  if (cobj->segments == NULL)
     return cd_error_str(kCDErrNoMem, "cd_segment_t");
 
-  seg = obj->segments;
-  return cd_obj_iterate_segs((struct cd_obj_s*) obj, cd_obj_fill_segs, &seg);
+  seg = cobj->segments;
+  return cd_obj_iterate_segs(obj, cd_obj_fill_segs, &seg);
 }
 
 
@@ -203,7 +203,7 @@ cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res) {
   if (!cd_obj_is_core(obj))
     return cd_error(kCDErrNotCore);
 
-  err = cd_obj_init_segments(cobj);
+  err = cd_obj_init_segments(obj);
   if (!cd_is_ok(err))
     return err;
 
