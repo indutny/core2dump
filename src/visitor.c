@@ -653,7 +653,6 @@ cd_error_t cd_node_init(cd_state_t* state,
   node->obj = ptr;
   node->map = map;
   node->name = 0;
-  node->trace = 0;
 
   QUEUE_INIT(&node->member);
   QUEUE_INIT(&node->edges.incoming);
@@ -744,10 +743,6 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   /* Fill the edge */
   if (edge == NULL)
     goto done;
-
-  /* Propagate trace */
-  if (!existing)
-    node->trace = from->trace;
 
   edge->key.from = from;
   edge->key.to = node;
