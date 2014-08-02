@@ -53,4 +53,7 @@ cd_error_t cd_obj_iterate_segs(struct cd_obj_s* obj,
                                cd_obj_iterate_seg_cb cb,
                                void* arg);
 
+/* Internal, mostly */
+cd_error_t cd_obj_init_segments(cd_common_obj_t* obj);
+
 #endif  /* SRC_OBJ_OBJ_COMMON_H_ */

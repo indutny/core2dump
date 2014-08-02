@@ -15,7 +15,6 @@
 #include "obj-common.h"
 
 
-static cd_error_t cd_obj_init_segments(cd_obj_t* obj);
 static cd_error_t cd_obj_init_symbols(cd_obj_t* obj);
 static cd_error_t cd_obj_get_section(cd_obj_t* obj,
                                      const char* name,
