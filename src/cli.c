@@ -14,11 +14,22 @@
 #include "v8constants.h"
 #include "v8helpers.h"
 
-static cd_error_t run(const char* input,
-                      const char* binary,
-                      const char* output);
-static cd_error_t cd_obj2json(int input, int binary, int output);
-static cd_error_t cd_print_dump(cd_state_t* state);
+typedef struct cd_argv_s cd_argv_t;
+
+struct cd_argv_s {
+  const char* core;
+  const char* binary;
+  const char* output;
+  int trace;
+};
+
+static cd_error_t run(cd_argv_t* argv);
+static cd_error_t cd_obj2json(int core,
+                              int binary,
+                              int output,
+                              cd_argv_t* argv);
+static cd_error_t cd_print_dump(cd_state_t* state, cd_writebuf_t* buf);
+static cd_error_t cd_print_trace(cd_state_t* state, cd_writebuf_t* buf);
 static void cd_print_nodes(cd_state_t* state, cd_writebuf_t* buf);
 static void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf);
 
@@ -42,9 +53,10 @@ void cd_print_help(const char* name) {
               "options:\n"
               " --version, -v           Print version\n"
               " --help, -h              Print this message\n"
-              " --input PATH, -i PATH   Specify input   (Required)\n"
-              " --binary PATH, -b PATH   Specify binary (Required)\n"
-              " --output PATH, -o PATH  Specify output  (Default: stdout)\n",
+              " --trace, -t             Print only a stack trace\n"
+              " --core PATH, -c PATH    Specify core file (Required)\n"
+              " --binary PATH, -b PATH  Specify binary    (Required)\n"
+              " --output PATH, -o PATH  Specify output    (Default: stdout)\n",
           name);
 }
 
@@ -53,22 +65,22 @@ int main(int argc, char** argv) {
   struct option long_options[] = {
     { "version", 0, NULL, 'v' },
     { "help", 1, NULL, 'h' },
-    { "input", 2, NULL, 'i' },
+    { "core", 2, NULL, 'c' },
     { "output", 3, NULL, 'o' },
     { "binary", 4, NULL, 'b' },
+    { "trace", 5, NULL, 't' },
   };
   int c;
-  const char* input;
-  const char* output;
-  const char* binary;
+  cd_argv_t cargv;
   cd_error_t err;
 
-  input = NULL;
-  output = NULL;
-  binary = NULL;
+  cargv.core = NULL;
+  cargv.output = NULL;
+  cargv.binary = NULL;
+  cargv.trace = 0;
 
   do {
-    c = getopt_long(argc, argv, "hvi:b:o:", long_options, NULL);
+    c = getopt_long(argc, argv, "hvtc:b:o:", long_options, NULL);
     switch (c) {
       case 'v':
         cd_print_version();
@@ -76,14 +88,17 @@ int main(int argc, char** argv) {
       case 'h':
         cd_print_help(argv[0]);
         return 0;
-      case 'i':
-        input = optarg;
+      case 'c':
+        cargv.core = optarg;
         break;
       case 'o':
-        output = optarg;
+        cargv.output = optarg;
         break;
       case 'b':
-        binary = optarg;
+        cargv.binary = optarg;
+        break;
+      case 't':
+        cargv.trace = 1;
         break;
       default:
         c = -1;
@@ -91,22 +106,22 @@ int main(int argc, char** argv) {
     }
   } while (c != -1);
 
-  if (input == NULL) {
+  if (cargv.core == NULL) {
     cd_print_help(argv[0]);
-    fprintf(stderr, "\nInput is a required argument\n");
+    fprintf(stderr, "\nCore is a required argument\n");
     return 1;
   }
 
-  if (binary == NULL) {
+  if (cargv.binary == NULL) {
     cd_print_help(argv[0]);
     fprintf(stderr, "\nBinary is a required argument\n");
     return 1;
   }
 
-  if (output == NULL)
-    output = "/dev/stdout";
+  if (cargv.output == NULL)
+    cargv.output = "/dev/stdout";
 
-  err = run(input, binary, output);
+  err = run(&cargv);
   if (!cd_is_ok(err)) {
     fprintf(stderr, "Failed with error:\n%s\n", cd_error_to_str(err));
     return 1;
@@ -117,33 +132,33 @@ int main(int argc, char** argv) {
 
 
 /* Open files and execute obj2json */
-cd_error_t run(const char* input, const char* binary, const char* output) {
+cd_error_t run(cd_argv_t* argv) {
   cd_error_t err;
   struct {
-    int input;
+    int core;
     int output;
     int binary;
   } fds;
 
-  fds.input = open(input, O_RDONLY);
-  if (fds.input == -1) {
-    err = cd_error_num(kCDErrInputNotFound, errno);
-    goto failed_open_input;
+  fds.core = open(argv->core, O_RDONLY);
+  if (fds.core == -1) {
+    err = cd_error_num(kCDErrCoreNotFound, errno);
+    goto failed_open_core;
   }
 
-  fds.binary = open(binary, O_RDONLY);
+  fds.binary = open(argv->binary, O_RDONLY);
   if (fds.binary == -1) {
     err = cd_error_num(kCDErrBinaryNotFound, errno);
     goto failed_open_binary;
   }
 
-  fds.output = open(output, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+  fds.output = open(argv->output, O_WRONLY | O_CREAT | O_TRUNC, 0755);
   if (fds.output == -1) {
     err = cd_error_num(kCDErrOutputNotFound, errno);
     goto failed_open_output;
   }
 
-  err = cd_obj2json(fds.input, fds.binary, fds.output);
+  err = cd_obj2json(fds.core, fds.binary, fds.output, argv);
 
   /* Clean-up */
   close(fds.output);
@@ -152,16 +167,17 @@ failed_open_output:
   close(fds.binary);
 
 failed_open_binary:
-  close(fds.input);
+  close(fds.core);
 
-failed_open_input:
+failed_open_core:
   return err;
 }
 
 
-cd_error_t cd_obj2json(int input, int binary, int output) {
+cd_error_t cd_obj2json(int input, int binary, int output, cd_argv_t* argv) {
   cd_error_t err;
   cd_state_t state;
+  cd_writebuf_t buf;
 
   state.core = cd_obj_new(input, &err);
   if (!cd_is_ok(err))
@@ -195,13 +211,27 @@ cd_error_t cd_obj2json(int input, int binary, int output) {
   if (!cd_is_ok(err))
     goto failed_collect_roots;
 
-  err = cd_visit_roots(&state);
-  if (!cd_is_ok(err))
+  if (cd_writebuf_init(&buf, state.output, kCDOutputBufSize) != 0) {
+    err = cd_error_str(kCDErrNoMem, "cd_writebuf_t");
     goto failed_collect_roots;
+  }
 
-  err = cd_print_dump(&state);
+  if (argv->trace) {
+    err = cd_print_trace(&state, &buf);
+  } else {
+    err = cd_visit_roots(&state);
+    if (!cd_is_ok(err))
+      goto failed_visit_roots;
+
+    err = cd_print_dump(&state, &buf);
+  }
   if (!cd_is_ok(err))
-    goto failed_collect_roots;
+    goto failed_visit_roots;
+
+  cd_writebuf_flush(&buf);
+
+failed_visit_roots:
+  cd_writebuf_destroy(&buf);
 
 failed_collect_roots:
   cd_visitor_destroy(&state);
@@ -223,15 +253,10 @@ fatal:
 }
 
 
-cd_error_t cd_print_dump(cd_state_t* state) {
-  cd_writebuf_t buf;
-
-  if (cd_writebuf_init(&buf, state->output, kCDOutputBufSize) != 0)
-    return cd_error_str(kCDErrNoMem, "cd_writebuf_t");
-
+cd_error_t cd_print_dump(cd_state_t* state, cd_writebuf_t* buf) {
   /* XXX Could be in a separate file */
   cd_writebuf_put(
-      &buf,
+      buf,
       "{\n"
       "  \"snapshot\": {\n"
       "    \"title\": \"heapdump by core2dump\",\n"
@@ -273,28 +298,25 @@ cd_error_t cd_print_dump(cd_state_t* state) {
       0);
 
   /* Print all accumulated nodes */
-  cd_writebuf_put(&buf, "  \"nodes\": [\n");
-  cd_print_nodes(state, &buf);
-  cd_writebuf_put(&buf, "  ],\n");
+  cd_writebuf_put(buf, "  \"nodes\": [\n");
+  cd_print_nodes(state, buf);
+  cd_writebuf_put(buf, "  ],\n");
 
   /* Print all accumulated edges */
-  cd_writebuf_put(&buf, "  \"edges\": [\n");
-  cd_print_edges(state, &buf);
-  cd_writebuf_put(&buf, "  ],\n");
+  cd_writebuf_put(buf, "  \"edges\": [\n");
+  cd_print_edges(state, buf);
+  cd_writebuf_put(buf, "  ],\n");
 
   cd_writebuf_put(
-      &buf,
+      buf,
       "  \"trace_function_infos\": [],\n"
       "  \"trace_tree\": [],\n");
 
   /* Print all accumulated strings */
-  cd_writebuf_put(&buf, "  \"strings\": [ ");
-  cd_strings_print(&state->strings, &buf);
-  cd_writebuf_put(&buf, " ]\n");
-  cd_writebuf_put(&buf, "}\n");
-  cd_writebuf_flush(&buf);
-
-  cd_writebuf_destroy(&buf);
+  cd_writebuf_put(buf, "  \"strings\": [ ");
+  cd_strings_print(&state->strings, buf);
+  cd_writebuf_put(buf, " ]\n");
+  cd_writebuf_put(buf, "}\n");
 
   return cd_ok();
 }
@@ -375,4 +397,24 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
       }
     }
   }
+}
+
+
+cd_error_t cd_print_trace(cd_state_t* state, cd_writebuf_t* buf) {
+  QUEUE* q;
+
+  QUEUE_FOREACH(q, &state->frames) {
+    cd_stack_frame_t* frame;
+
+    frame = container_of(q, cd_stack_frame_t, member);
+
+    cd_writebuf_put(
+        buf,
+        "0x%016llx %.*s\n",
+        frame->ip,
+        frame->name_len,
+        frame->name);
+  }
+
+  return cd_ok();
 }

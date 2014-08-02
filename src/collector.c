@@ -84,7 +84,6 @@ void cd_collect_frame(cd_state_t* state, cd_stack_frame_t* sframe, void* arg) {
   }
 
 done:
-  fprintf(stdout, "%p -> %.*s\n", frame->ip, frame->name_len, frame->name);
   QUEUE_INSERT_TAIL(&state->frames, &frame->member);
   state->frame_count++;
   return;
