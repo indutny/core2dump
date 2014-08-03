@@ -2,6 +2,7 @@
 #include "error.h"
 #include "obj.h"
 #include "obj-internal.h"
+#include "queue.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -266,6 +267,11 @@ int cd_symbol_sort(const cd_sym_t* a, const cd_sym_t* b) {
 
 
 cd_error_t cd_obj_internal_init(cd_obj_t* obj) {
+  QUEUE_INIT(&obj->member);
+
+  /* Dynamic libraries */
+  QUEUE_INIT(&obj->dso);
+
   obj->has_syms = 0;
   obj->segment_count = -1;
   obj->segments = NULL;
@@ -282,6 +288,18 @@ void cd_obj_internal_free(cd_obj_t* obj) {
   if (obj->segment_count != -1) {
     free(obj->segments);
     cd_splay_destroy(&obj->seg_splay);
+  }
+
+  /* Free DSOs */
+  while (!QUEUE_EMPTY(&obj->dso)) {
+    QUEUE* q;
+    cd_obj_t* dso;
+
+    q = QUEUE_HEAD(&obj->dso);
+    QUEUE_REMOVE(q);
+    dso = container_of(q, cd_obj_t, member);
+
+    dso->method->obj_free(dso);
   }
 }
 

@@ -4,6 +4,7 @@
 #include "error.h"
 #include "common.h"
 #include "obj-common.h"
+#include "queue.h"
 
 #include <stdint.h>
 
@@ -35,7 +36,8 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
                                                    cd_obj_iterate_seg_cb cb,
                                                    void* arg);
 
-#define CD_OBJ_INTERNAL_FIELDS                                                  \
+#define CD_OBJ_INTERNAL_FIELDS                                                \
+    QUEUE member;                                                             \
     struct cd_obj_method_s* method;                                           \
     void* addr;                                                               \
     size_t size;                                                              \
@@ -46,6 +48,7 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
     cd_segment_t* segments;                                                   \
     int segment_count;                                                        \
     cd_splay_t seg_splay;                                                     \
+    QUEUE dso;                                                                \
 
 struct cd_obj_method_s {
   cd_obj_method_new_t obj_new;
