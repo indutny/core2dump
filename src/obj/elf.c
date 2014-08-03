@@ -9,19 +9,20 @@
 #include <sys/types.h>
 #include <elf.h>
 
+#include "obj/elf.h"
 #include "error.h"
 #include "obj.h"
 #include "common.h"
-#include "obj-common.h"
+#include "obj-internal.h"
 
+typedef struct cd_elf_obj_s cd_elf_obj_t;
 
-static cd_error_t cd_obj_init_symbols(cd_obj_t* obj);
-static cd_error_t cd_obj_get_section(cd_obj_t* obj,
+static cd_error_t cd_obj_get_section(cd_elf_obj_t* obj,
                                      const char* name,
                                      char** sect);
 
 
-struct cd_obj_s {
+struct cd_elf_obj_s {
   CD_OBJ_COMMON_FIELDS
 
   Elf64_Ehdr header;
@@ -31,15 +32,14 @@ struct cd_obj_s {
 };
 
 
-
-cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
-  cd_obj_t* obj;
+cd_elf_obj_t* cd_elf_obj_new(int fd, cd_error_t* err) {
+  cd_elf_obj_t* obj;
   struct stat sbuf;
   char* ptr;
 
   obj = malloc(sizeof(*obj));
   if (obj == NULL) {
-    *err = cd_error_str(kCDErrNoMem, "cd_obj_t");
+    *err = cd_error_str(kCDErrNoMem, "cd_elf_obj_t");
     goto failed_malloc;
   }
 
@@ -49,7 +49,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
     goto failed_fstat;
   }
 
-  *err = cd_obj_common_init(obj);
+  *err = cd_obj_internal_init((cd_obj_t*) obj);
   if (!cd_is_ok(*err))
     goto failed_fstat;
 
@@ -131,7 +131,7 @@ failed_magic2:
   obj->addr = NULL;
 
 failed_magic:
-  cd_obj_common_free(obj);
+  cd_obj_internal_free((cd_obj_t*) obj);
 
 failed_fstat:
   free(obj);
@@ -141,24 +141,24 @@ failed_malloc:
 }
 
 
-void cd_obj_free(cd_obj_t* obj) {
+void cd_elf_obj_free(cd_elf_obj_t* obj) {
   munmap(obj->addr, obj->size);
   obj->addr = NULL;
 
-  cd_obj_common_free(obj);
+  cd_obj_internal_free((cd_obj_t*) obj);
 
   free(obj);
 }
 
 
-int cd_obj_is_core(cd_obj_t* obj) {
+int cd_elf_obj_is_core(cd_elf_obj_t* obj) {
   return obj->header.e_type == ET_CORE;
 }
 
 
-cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
-                               cd_obj_iterate_seg_cb cb,
-                               void* arg) {
+cd_error_t cd_elf_obj_iterate_segs(cd_elf_obj_t* obj,
+                                   cd_obj_iterate_seg_cb cb,
+                                   void* arg) {
   cd_error_t err;
   char* ptr;
   cd_segment_t seg;
@@ -191,7 +191,7 @@ cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
     seg.end = vmaddr + vmsize;
     seg.ptr = (char*) obj->addr + fileoff;
 
-    err = cb(obj, &seg, arg);
+    err = cb((cd_obj_t*) obj, &seg, arg);
     if (!cd_is_ok(err))
       goto fatal;
   }
@@ -203,7 +203,9 @@ fatal:
 }
 
 
-cd_error_t cd_obj_get_section(cd_obj_t* obj, const char* name, char** sect) {
+cd_error_t cd_elf_obj_get_section(cd_elf_obj_t* obj,
+                                  const char* name,
+                                  char** sect) {
   char* ptr;
   int i;
 
@@ -260,9 +262,9 @@ cd_error_t cd_obj_get_section(cd_obj_t* obj, const char* name, char** sect) {
     } while (0)                                                               \
 
 
-cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
-                               cd_obj_iterate_sym_cb cb,
-                               void* arg) {
+cd_error_t cd_elf_obj_iterate_syms(cd_elf_obj_t* obj,
+                                   cd_obj_iterate_sym_cb cb,
+                                   void* arg) {
   cd_error_t err;
   char* strtab;
   char* ent;
@@ -305,7 +307,7 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
       sym.nlen = strlen(name);
       sym.value = value;
 
-      err = cb(obj, &sym, arg);
+      err = cb((cd_obj_t*) obj, &sym, arg);
       if (!cd_is_ok(err))
         goto fatal;
     }
@@ -318,14 +320,14 @@ fatal:
 }
 
 
-cd_error_t cd_obj_get_thread(cd_obj_t* obj,
-                             unsigned int index,
-                             cd_obj_thread_t* thread) {
+cd_error_t cd_elf_obj_get_thread(cd_elf_obj_t* obj,
+                                 unsigned int index,
+                                 cd_obj_thread_t* thread) {
   cd_error_t err;
   char* ent;
   char* end;
 
-  if (!cd_obj_is_core(obj)) {
+  if (!cd_elf_obj_is_core(obj)) {
     err = cd_error_num(kCDErrNotCore, obj->header.e_type);
     goto fatal;
   }
@@ -432,6 +434,18 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
 fatal:
   return err;
 }
+
+
+cd_obj_method_t cd_elf_obj_method_def = {
+  .obj_new = (cd_obj_method_new_t) cd_elf_obj_new,
+  .obj_free = (cd_obj_method_free_t) cd_elf_obj_free,
+  .obj_is_core = (cd_obj_method_is_core_t) cd_elf_obj_is_core,
+  .obj_get_thread = (cd_obj_method_get_thread_t) cd_elf_obj_get_thread,
+  .obj_iterate_syms = (cd_obj_method_iterate_syms_t) cd_elf_obj_iterate_syms,
+  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_elf_obj_iterate_segs
+};
+
+cd_obj_method_t* cd_elf_obj_method = &cd_elf_obj_method_def;
 
 
 #undef CD_ITERATE_SECTS

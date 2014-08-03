@@ -4,41 +4,19 @@
 #include <stdint.h>
 
 #include "error.h"
+#include "obj-common.h"
+#include "obj-internal.h"
 
 /* Forward declaration */
-struct cd_obj_s;
+struct cd_obj_method_s;
 
-typedef struct cd_obj_thread_s cd_obj_thread_t;
-typedef struct cd_frame_s cd_frame_t;
 typedef struct cd_obj_s cd_obj_t;
 
-typedef cd_error_t (*cd_iterate_stack_cb)(struct cd_obj_s* obj,
-                                          cd_frame_t* frame,
-                                          void* arg);
-
-struct cd_obj_thread_s {
-  struct {
-    unsigned int count;
-    /* XXX Support variable register count? */
-    uint64_t values[32];
-
-    uint64_t ip;
-  } regs;
-
-  struct {
-    uint64_t top;
-    uint64_t frame;
-    uint64_t bottom;
-  } stack;
+struct cd_obj_s {
+  CD_OBJ_INTERNAL_FIELDS
 };
 
-struct cd_frame_s {
-  char* start;
-  char* stop;
-  uint64_t ip;
-};
-
-cd_obj_t* cd_obj_new(int fd, cd_error_t* err);
+cd_obj_t* cd_obj_new(struct cd_obj_method_s* method, int fd, cd_error_t* err);
 void cd_obj_free(cd_obj_t* obj);
 int cd_obj_is_x64(cd_obj_t* obj);
 int cd_obj_is_core(cd_obj_t* obj);

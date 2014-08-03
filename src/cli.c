@@ -7,6 +7,8 @@
 #include "error.h"
 #include "collector.h"
 #include "common.h"
+#include "obj/mach.h"
+#include "obj/elf.h"
 #include "obj.h"
 #include "strings.h"
 #include "version.h"
@@ -178,14 +180,23 @@ cd_error_t cd_obj2json(int input, int binary, int output, cd_argv_t* argv) {
   cd_error_t err;
   cd_state_t state;
   cd_writebuf_t buf;
+  cd_obj_method_t* method;
 
-  state.core = cd_obj_new(input, &err);
+#if defined(__APPLE__)
+  method = cd_mach_obj_method;
+#elif defined(__linux__)
+  method = cd_elf_obj_method;
+#else
+  abort();
+#endif
+
+  state.core = cd_obj_new(cd_mach_obj_method, input, &err);
   if (!cd_is_ok(err))
     goto fatal;
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
 
-  state.binary = cd_obj_new(binary, &err);
+  state.binary = cd_obj_new(cd_mach_obj_method, binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
 

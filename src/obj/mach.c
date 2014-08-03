@@ -9,26 +9,28 @@
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
 
+#include "obj/mach.h"
 #include "error.h"
 #include "obj.h"
-#include "obj-common.h"
+#include "obj-internal.h"
 #include "common.h"
 
+typedef struct cd_mach_obj_s cd_mach_obj_t;
 
-struct cd_obj_s {
-  CD_OBJ_COMMON_FIELDS
+struct cd_mach_obj_s {
+  CD_OBJ_INTERNAL_FIELDS
 
   struct mach_header* header;
 };
 
 
-cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
-  cd_obj_t* obj;
+cd_mach_obj_t* cd_mach_obj_new(int fd, cd_error_t* err) {
+  cd_mach_obj_t* obj;
   struct stat sbuf;
 
   obj = malloc(sizeof(*obj));
   if (obj == NULL) {
-    *err = cd_error_str(kCDErrNoMem, "cd_obj_t");
+    *err = cd_error_str(kCDErrNoMem, "cd_mach_obj_t");
     goto failed_malloc;
   }
 
@@ -39,7 +41,7 @@ cd_obj_t* cd_obj_new(int fd, cd_error_t* err) {
   }
   obj->size = sbuf.st_size;
 
-  *err = cd_obj_common_init(obj);
+  *err = cd_obj_internal_init((cd_obj_t*) obj);
   if (!cd_is_ok(*err))
     goto failed_fstat;
 
@@ -85,7 +87,7 @@ failed_magic2:
   obj->addr = NULL;
 
 failed_magic:
-  cd_obj_common_free(obj);
+  cd_obj_internal_free((cd_obj_t*) obj);
 
 failed_fstat:
   free(obj);
@@ -95,16 +97,16 @@ failed_malloc:
 }
 
 
-void cd_obj_free(cd_obj_t* obj) {
+void cd_mach_obj_free(cd_mach_obj_t* obj) {
   munmap(obj->addr, obj->size);
   obj->addr = NULL;
 
-  cd_obj_common_free(obj);
+  cd_obj_internal_free((cd_obj_t*) obj);
   free(obj);
 }
 
 
-int cd_obj_is_core(cd_obj_t* obj) {
+int cd_mach_obj_is_core(cd_mach_obj_t* obj) {
   return obj->header->filetype == MH_CORE;
 }
 
@@ -140,9 +142,9 @@ int cd_obj_is_core(cd_obj_t* obj) {
     } while (0);                                                              \
 
 
-cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
-                               cd_obj_iterate_seg_cb cb,
-                               void* arg) {
+cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
+                                    cd_obj_iterate_seg_cb cb,
+                                    void* arg) {
   cd_error_t err;
 
   CD_ITERATE_LCMDS({
@@ -176,7 +178,7 @@ cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
     seg.ptr = (char*) obj->addr + fileoff;
 
     /* Fill the splay tree */
-    err = cb(obj, &seg, arg);
+    err = cb((cd_obj_t*) obj, &seg, arg);
     if (!cd_is_ok(err))
       goto fatal;
   })
@@ -188,9 +190,9 @@ fatal:
 }
 
 
-cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
-                               cd_obj_iterate_sym_cb cb,
-                               void* arg) {
+cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
+                                    cd_obj_iterate_sym_cb cb,
+                                    void* arg) {
   cd_error_t err;
 
   CD_ITERATE_LCMDS({
@@ -240,7 +242,7 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
       sym.name = name;
       sym.nlen = strlen(name);
       sym.value = value;
-      err = cb(obj, &sym, arg);
+      err = cb((cd_obj_t*) obj, &sym, arg);
       if (!cd_is_ok(err))
         goto fatal;
     }
@@ -254,12 +256,12 @@ fatal:
 }
 
 
-cd_error_t cd_obj_get_thread(cd_obj_t* obj,
-                             unsigned int index,
-                             cd_obj_thread_t* thread) {
+cd_error_t cd_mach_obj_get_thread(cd_mach_obj_t* obj,
+                                  unsigned int index,
+                                  cd_obj_thread_t* thread) {
   cd_error_t err;
 
-  if (!cd_obj_is_core(obj)) {
+  if (!cd_mach_obj_is_core(obj)) {
     err = cd_error_num(kCDErrNotCore, obj->header->filetype);
     goto fatal;
   }
@@ -365,6 +367,18 @@ cd_error_t cd_obj_get_thread(cd_obj_t* obj,
 fatal:
   return err;
 }
+
+
+cd_obj_method_t cd_mach_obj_method_def = {
+  .obj_new = (cd_obj_method_new_t) cd_mach_obj_new,
+  .obj_free = (cd_obj_method_free_t) cd_mach_obj_free,
+  .obj_is_core = (cd_obj_method_is_core_t) cd_mach_obj_is_core,
+  .obj_get_thread = (cd_obj_method_get_thread_t) cd_mach_obj_get_thread,
+  .obj_iterate_syms = (cd_obj_method_iterate_syms_t) cd_mach_obj_iterate_syms,
+  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_mach_obj_iterate_segs
+};
+
+cd_obj_method_t* cd_mach_obj_method = &cd_mach_obj_method_def;
 
 
 #undef CD_ITERATE_LCMDS

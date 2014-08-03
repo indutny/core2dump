@@ -1,15 +1,19 @@
-#ifndef SRC_OBJ_OBJ_COMMON_H_
-#define SRC_OBJ_OBJ_COMMON_H_
+#ifndef SRC_OBJ_OBJ_INTERNAL_H_
+#define SRC_OBJ_OBJ_INTERNAL_H_
 
 #include "error.h"
+#include "common.h"
+#include "obj-common.h"
 
 #include <stdint.h>
 
 /* Forward declarations */
 struct cd_obj_s;
 
+typedef struct cd_obj_method_s cd_obj_method_t;
 typedef struct cd_segment_s cd_segment_t;
 typedef struct cd_sym_s cd_sym_t;
+
 typedef cd_error_t (*cd_obj_iterate_sym_cb)(struct cd_obj_s* obj,
                                             cd_sym_t* sym,
                                             void* arg);
@@ -17,7 +21,22 @@ typedef cd_error_t (*cd_obj_iterate_seg_cb)(struct cd_obj_s* obj,
                                             cd_segment_t* seg,
                                             void* arg);
 
-#define CD_OBJ_COMMON_FIELDS                                                  \
+/* Method types */
+typedef struct cd_obj_s* (*cd_obj_method_new_t)(int fd, cd_error_t* err);
+typedef void (*cd_obj_method_free_t)(struct cd_obj_s* obj);
+typedef int (*cd_obj_method_is_core_t)(struct cd_obj_s* obj);
+typedef cd_error_t (*cd_obj_method_get_thread_t)(struct cd_obj_s* obj,
+                                                 unsigned int index,
+                                                 cd_obj_thread_t* thread);
+typedef cd_error_t (*cd_obj_method_iterate_syms_t)(struct cd_obj_s* obj,
+                                                   cd_obj_iterate_sym_cb cb,
+                                                   void* arg);
+typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
+                                                   cd_obj_iterate_seg_cb cb,
+                                                   void* arg);
+
+#define CD_OBJ_INTERNAL_FIELDS                                                  \
+    struct cd_obj_method_s* method;                                           \
     void* addr;                                                               \
     size_t size;                                                              \
     int is_x64;                                                               \
@@ -28,6 +47,14 @@ typedef cd_error_t (*cd_obj_iterate_seg_cb)(struct cd_obj_s* obj,
     int segment_count;                                                        \
     cd_splay_t seg_splay;                                                     \
 
+struct cd_obj_method_s {
+  cd_obj_method_new_t obj_new;
+  cd_obj_method_free_t obj_free;
+  cd_obj_method_is_core_t obj_is_core;
+  cd_obj_method_get_thread_t obj_get_thread;
+  cd_obj_method_iterate_syms_t obj_iterate_syms;
+  cd_obj_method_iterate_segs_t obj_iterate_segs;
+};
 
 struct cd_segment_s {
   uint64_t start;
@@ -42,8 +69,8 @@ struct cd_sym_s {
   uint64_t value;
 };
 
-cd_error_t cd_obj_common_init(struct cd_obj_s* obj);
-void cd_obj_common_free(struct cd_obj_s* obj);
+cd_error_t cd_obj_internal_init(struct cd_obj_s* obj);
+void cd_obj_internal_free(struct cd_obj_s* obj);
 
 /* Platform-specific */
 cd_error_t cd_obj_iterate_syms(struct cd_obj_s* obj,
@@ -56,4 +83,4 @@ cd_error_t cd_obj_iterate_segs(struct cd_obj_s* obj,
 /* Internal, mostly */
 cd_error_t cd_obj_init_segments(struct cd_obj_s* obj);
 
-#endif  /* SRC_OBJ_OBJ_COMMON_H_ */
+#endif  /* SRC_OBJ_OBJ_INTERNAL_H_ */
