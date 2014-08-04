@@ -71,7 +71,7 @@ cd_error_t cd_collect_frame(cd_obj_t* obj, cd_frame_t* sframe, void* arg) {
   frame->ip = sframe->ip;
 
   /* Lookup C/C++ symbol if present */
-  err = cd_obj_lookup_ip(state->binary,
+  err = cd_obj_lookup_ip(state->core,
                          frame->ip,
                          &frame->name,
                          &frame->name_len);
@@ -225,7 +225,7 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_js_frame_t* frame) {
 cd_error_t cd_collect_roots(cd_state_t* state) {
   cd_error_t err;
 
-  err = cd_v8_init(state->binary, state->core);
+  err = cd_v8_init(state->core);
   if (!cd_is_ok(err))
     return err;
 

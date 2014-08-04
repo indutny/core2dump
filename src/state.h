@@ -11,7 +11,6 @@ typedef struct cd_state_s cd_state_t;
 
 struct cd_state_s {
   cd_obj_t* core;
-  cd_obj_t* binary;
   int output;
   int ptr_size;
 

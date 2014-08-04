@@ -189,6 +189,6 @@ CD_V8_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
 
 #define CD_V8_TYPE(M, S) cd_v8_type_##M##__##S##_TYPE
 
-cd_error_t cd_v8_init(cd_obj_t* binary, cd_obj_t* core);
+cd_error_t cd_v8_init(cd_obj_t* core);
 
 #endif  /* SRC_V8_CONSTANTS_H_ */

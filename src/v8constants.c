@@ -15,9 +15,9 @@ static int cd_v8_initialized;
       cd_error_t err;                                                         \
       uint64_t addr;                                                          \
       void* location;                                                         \
-      err = cd_obj_get_sym(binary, "_v8dbg_" #V, &addr);                      \
+      err = cd_obj_get_sym(core, "_v8dbg_" #V, &addr);                        \
       if (!cd_is_ok(err))                                                     \
-        err = cd_obj_get_sym(binary, "v8dbg_" #V, &addr);                     \
+        err = cd_obj_get_sym(core, "v8dbg_" #V, &addr);                       \
       if (!cd_is_ok(err))                                                     \
         return err;                                                           \
       err = cd_obj_get(core, addr, sizeof(int), &location);                   \
@@ -26,7 +26,7 @@ static int cd_v8_initialized;
       cd_v8_##V = *(int*) location;                                           \
     } while (0);                                                              \
 
-cd_error_t cd_v8_init(cd_obj_t* binary, cd_obj_t* core) {
+cd_error_t cd_v8_init(cd_obj_t* core) {
   if (cd_v8_initialized)
     return cd_ok();
 

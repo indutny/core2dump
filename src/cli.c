@@ -20,7 +20,6 @@ typedef struct cd_argv_s cd_argv_t;
 
 struct cd_argv_s {
   const char* core;
-  const char* binary;
   const char* output;
   int trace;
 };
@@ -54,7 +53,6 @@ void cd_print_help(const char* name) {
               " --help, -h              Print this message\n"
               " --trace, -t             Print only a stack trace\n"
               " --core PATH, -c PATH    Specify core file (Required)\n"
-              " --binary PATH, -b PATH  Specify binary    (Required)\n"
               " --output PATH, -o PATH  Specify output    (Default: stdout)\n",
           name);
 }
@@ -66,7 +64,6 @@ int main(int argc, char** argv) {
     { "help", 1, NULL, 'h' },
     { "core", 2, NULL, 'c' },
     { "output", 3, NULL, 'o' },
-    { "binary", 4, NULL, 'b' },
     { "trace", 5, NULL, 't' },
   };
   int c;
@@ -75,11 +72,10 @@ int main(int argc, char** argv) {
 
   cargv.core = NULL;
   cargv.output = NULL;
-  cargv.binary = NULL;
   cargv.trace = 0;
 
   do {
-    c = getopt_long(argc, argv, "hvtc:b:o:", long_options, NULL);
+    c = getopt_long(argc, argv, "hvtc:o:", long_options, NULL);
     switch (c) {
       case 'v':
         cd_print_version();
@@ -93,9 +89,6 @@ int main(int argc, char** argv) {
       case 'o':
         cargv.output = optarg;
         break;
-      case 'b':
-        cargv.binary = optarg;
-        break;
       case 't':
         cargv.trace = 1;
         break;
@@ -108,12 +101,6 @@ int main(int argc, char** argv) {
   if (cargv.core == NULL) {
     cd_print_help(argv[0]);
     fprintf(stderr, "\nCore is a required argument\n");
-    return 1;
-  }
-
-  if (cargv.binary == NULL) {
-    cd_print_help(argv[0]);
-    fprintf(stderr, "\nBinary is a required argument\n");
     return 1;
   }
 
@@ -167,17 +154,13 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
 
-  state.binary = cd_obj_new(method, argv->binary, &err);
-  if (!cd_is_ok(err))
-    goto failed_binary_obj;
-
   state.output = output;
 
   err = cd_strings_init(&state.strings);
   if (!cd_is_ok(err))
     goto failed_cd_strings_init;
 
-  err = cd_v8_init(state.binary, state.core);
+  err = cd_v8_init(state.core);
   if (!cd_is_ok(err))
     goto failed_v8_init;
 
@@ -225,9 +208,6 @@ failed_v8_init:
   cd_strings_destroy(&state.strings);
 
 failed_cd_strings_init:
-  cd_obj_free(state.binary);
-
-failed_binary_obj:
   cd_obj_free(state.core);
 
 fatal:

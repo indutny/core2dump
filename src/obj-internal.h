@@ -52,6 +52,7 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
     int segment_count;                                                        \
     cd_splay_t seg_splay;                                                     \
     QUEUE dso;                                                                \
+    int64_t aslr;                                                             \
 
 struct cd_obj_method_s {
   cd_obj_method_new_t obj_new;

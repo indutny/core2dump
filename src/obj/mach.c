@@ -9,6 +9,7 @@
 #include <mach-o/fat.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
+#include <mach-o/stab.h>
 #include <libkern/OSByteOrder.h>
 
 #include "obj/mach.h"
@@ -84,7 +85,6 @@ struct cd_mach_dyld_image32_s {
 struct cd_mach_obj_s {
   CD_OBJ_INTERNAL_FIELDS
 
-  int64_t aslr;
   struct mach_header* header;
   struct mach_header* dyld;
   uint64_t dyld_off;
@@ -430,7 +430,10 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
         name += symtab->stroff + nl[i].n_un.n_strx;
         type = nl[i].n_type;
       }
-      type &= N_TYPE;
+
+      /* Only external/global symbols are allowed */
+      if ((type & N_EXT) == 0)
+        continue;
 
       if (obj->is_x64)
         value = nl64[i].n_value;
@@ -674,8 +677,6 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
   err = cd_obj_get_sym(obj->dyld_obj, "_dyld_all_image_infos", &infos_off);
   if (!cd_is_ok(err))
     return err;
-
-  infos_off += ((cd_mach_obj_t*) obj->dyld_obj)->aslr;
 
   if (obj->is_x64) {
     cd_mach_dyld_infos_t* infos;

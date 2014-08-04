@@ -108,15 +108,18 @@ cd_error_t cd_obj_iterate_segs(cd_obj_t* obj,
 
 cd_error_t cd_obj_insert_syms(cd_obj_t* obj, cd_sym_t* sym, void* arg) {
   cd_sym_t* copy;
+  uint64_t val;
 
   /* Skip empty symbols */
   if (sym->nlen == 0 || sym->value == 0)
     return cd_ok();
 
+  val = sym->value + obj->aslr;
+
   if (cd_hashmap_insert(&obj->syms,
                         sym->name,
                         sym->nlen,
-                        (void*) sym->value) != 0) {
+                        (void*) val) != 0) {
     return cd_error_str(kCDErrNoMem, "cd_hashmap_insert");
   }
 
@@ -124,6 +127,9 @@ cd_error_t cd_obj_insert_syms(cd_obj_t* obj, cd_sym_t* sym, void* arg) {
   if (copy == NULL)
     return cd_error_str(kCDErrNoMem, "cd_sym_t");
   *copy = *sym;
+
+  /* ASLR slide value */
+  copy->value = val;
 
   if (cd_splay_insert(&obj->sym_splay, copy) != 0)
     free(copy);
@@ -140,9 +146,10 @@ cd_error_t cd_obj_insert_seg_ends(cd_obj_t* obj,
   copy = malloc(sizeof(*copy));
   if (copy == NULL)
     return cd_error_str(kCDErrNoMem, "cd_sym_t");
+
   copy->name = NULL;
   copy->nlen = 0;
-  copy->value = seg->end;
+  copy->value = obj->aslr + seg->end;
 
   if (cd_splay_insert(&obj->sym_splay, copy) != 0)
     free(copy);
@@ -180,6 +187,7 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj,
                           uint64_t* addr) {
   cd_error_t err;
   void* res;
+  QUEUE* q;
 
   err = cd_obj_init_syms(obj);
   if (!cd_is_ok(err))
@@ -188,10 +196,23 @@ cd_error_t cd_obj_get_sym(cd_obj_t* obj,
   assert(sizeof(void*) == sizeof(*addr));
   res = cd_hashmap_get(&obj->syms, sym, strlen(sym));
   if (res == NULL)
-    return cd_error_str(kCDErrNotFound, sym);
+    goto not_found;
 
   *addr = (uint64_t) res;
   return cd_ok();
+
+not_found:
+  /* Lookup sym in dsos */
+  QUEUE_FOREACH(q, &obj->dso) {
+    cd_obj_t* dso;
+
+    dso = container_of(q, cd_obj_t, member);
+    err = cd_obj_get_sym(dso, sym, addr);
+    if (cd_is_ok(err) || err.code != kCDErrNotFound)
+      return err;
+  }
+
+  return cd_error_str(kCDErrNotFound, sym);
 }
 
 
@@ -300,6 +321,7 @@ cd_error_t cd_obj_internal_init(cd_obj_t* obj) {
   obj->has_syms = 0;
   obj->segment_count = -1;
   obj->segments = NULL;
+  obj->aslr = 0;
 
   return cd_ok();
 }
@@ -341,6 +363,7 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   cd_error_t err;
   cd_sym_t idx;
   cd_sym_t* r;
+  QUEUE* q;
 
   err = cd_obj_init_syms(obj);
   if (!cd_is_ok(err))
@@ -349,16 +372,28 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   idx.value = addr;
   r = cd_splay_find(&obj->sym_splay, &idx);
   if (r == NULL)
-    return cd_error(kCDErrNotFound);
+    goto not_found;
 
   if (r->name == NULL && r->nlen == 0)
-    return cd_error(kCDErrNotFound);
+    goto not_found;
 
   *sym = r->name;
   *sym_len = r->nlen;
 
-
   return cd_ok();
+
+not_found:
+  /* Lookup ip in dsos */
+  QUEUE_FOREACH(q, &obj->dso) {
+    cd_obj_t* dso;
+
+    dso = container_of(q, cd_obj_t, member);
+    err = cd_obj_lookup_ip(dso, addr, sym, sym_len);
+    if (cd_is_ok(err) || err.code != kCDErrNotFound)
+      return err;
+  }
+
+  return cd_error(kCDErrNotFound);
 }
 
 
