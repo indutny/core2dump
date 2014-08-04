@@ -33,10 +33,19 @@ static cd_error_t cd_obj_insert_syms(cd_obj_t* obj,
 /* Wrappers around method */
 
 cd_obj_t* cd_obj_new(cd_obj_method_t* method, int fd, cd_error_t* err) {
+  return cd_obj_new_ex(method, fd, NULL, err);
+}
+
+
+cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
+                        int fd,
+                        void* opts,
+                        cd_error_t* err) {
   cd_obj_t* res;
 
-  res = method->obj_new(fd, err);
-  res->method = method;
+  res = method->obj_new(fd, opts, err);
+  if (cd_is_ok(*err))
+    res->method = method;
 
   return res;
 }

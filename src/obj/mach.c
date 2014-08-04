@@ -1,13 +1,17 @@
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <mach-o/fat.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
+#include <libkern/OSByteOrder.h>
+#include <unistd.h>
 
 #include "obj/mach.h"
 #include "error.h"
@@ -16,15 +20,81 @@
 #include "common.h"
 
 typedef struct cd_mach_obj_s cd_mach_obj_t;
+typedef struct cd_mach_opts_s cd_mach_opts_t;
+typedef struct cd_mach_dyld_infos_s cd_mach_dyld_infos_t;
+typedef struct cd_mach_dyld_infos32_s cd_mach_dyld_infos32_t;
+
+/* See mach-o/dyld_images.h */
+struct cd_mach_dyld_infos_s {
+  uint32_t version;
+  uint32_t infoArrayCount;
+  uint64_t infoArray;
+  uint64_t notification;
+  uint64_t _reserved0;
+  uint64_t loadAddr;
+
+  uint64_t jitInfo;
+  uint64_t dyldVersion;
+  uint64_t errorMessage;
+  uint64_t termFlags;
+  uint64_t shmPage;
+  uint64_t sysOrderFlag;
+  uint64_t uuidArrayCount;
+  uint64_t uuidArray;
+  uint64_t infosAddress;
+  uint64_t initImageCount;
+  uint64_t _reserved[5];
+  unsigned char uuid[16];
+};
+
+struct cd_mach_dyld_infos32_s {
+  uint32_t version;
+  uint32_t infoArrayCount;
+  uint32_t infoArray;
+  uint32_t notification;
+  uint32_t _reserved0;
+  uint32_t loadAddr;
+
+  uint32_t jitInfo;
+  uint32_t dyldVersion;
+  uint32_t errorMessage;
+  uint32_t termFlags;
+  uint32_t shmPage;
+  uint32_t sysOrderFlag;
+  uint32_t uuidArrayCount;
+  uint32_t uuidArray;
+  uint32_t infosAddress;
+  uint32_t initImageCount;
+  uint32_t _reserved[5];
+  unsigned char uuid[16];
+};
 
 struct cd_mach_obj_s {
   CD_OBJ_INTERNAL_FIELDS
 
   struct mach_header* header;
+  struct mach_header* dyld;
+  uint64_t dyld_off;
+  uint64_t dyld_size;
+  cd_mach_dyld_infos_t dyld_all_infos;
+  char* dyld_path;
+  int dyld_fd;
+  cd_obj_t* dyld_obj;
 };
 
 
-cd_mach_obj_t* cd_mach_obj_new(int fd, cd_error_t* err) {
+struct cd_mach_opts_s {
+  int fat64;
+};
+
+static cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts);
+static cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj);
+static cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj,
+                                            cd_segment_t* seg);
+static cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj);
+
+
+cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
   cd_mach_obj_t* obj;
   struct stat sbuf;
 
@@ -33,6 +103,9 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_error_t* err) {
     *err = cd_error_str(kCDErrNoMem, "cd_mach_obj_t");
     goto failed_malloc;
   }
+
+  /* Just to be able to use cd_obj_ during init */
+  obj->method = cd_mach_obj_method;
 
   /* mmap the file */
   if (fstat(fd, &sbuf) != 0) {
@@ -66,8 +139,16 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_error_t* err) {
    */
   obj->header = obj->addr;
 
+  /* Unwrap FAT file */
+  if (obj->header->magic == FAT_CIGAM || obj->header->magic == FAT_MAGIC) {
+    *err = cd_mach_fat_unwrap(obj, opts);
+    if (!cd_is_ok(*err))
+      goto failed_magic2;
+  }
+
   /* Big-Endian not supported */
-  if (obj->header->magic == MH_CIGAM || obj->header->magic == MH_CIGAM_64) {
+  if (obj->header->magic == MH_CIGAM ||
+      obj->header->magic == MH_CIGAM_64) {
     *err = cd_error_num(kCDErrBigEndianMagic, obj->header->magic);
     goto failed_magic2;
   }
@@ -79,7 +160,15 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_error_t* err) {
 
   obj->is_x64 = obj->header->magic == MH_MAGIC_64;
 
-  *err = cd_ok();
+  /* Find dyld infos */
+  if (obj->header->filetype == MH_CORE)
+    *err = cd_mach_obj_locate(obj);
+  else
+    *err = cd_ok();
+
+  if (!cd_is_ok(*err))
+    goto failed_magic2;
+
   return obj;
 
 failed_magic2:
@@ -102,7 +191,53 @@ void cd_mach_obj_free(cd_mach_obj_t* obj) {
   obj->addr = NULL;
 
   cd_obj_internal_free((cd_obj_t*) obj);
+  close(obj->dyld_fd);
+
   free(obj);
+}
+
+
+cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
+  struct fat_header* fat;
+  int swap;
+  uint32_t nfat_arch;
+  struct fat_arch* arch;
+
+  if (opts == NULL)
+    return cd_error_num(kCDErrInvalidMagic, obj->header->magic);
+
+  fat = (struct fat_header*) obj->header;
+  swap = fat->magic == FAT_CIGAM;
+
+  nfat_arch = fat->nfat_arch;
+  if (swap)
+    nfat_arch = OSSwapInt32(nfat_arch);
+
+  arch = (struct fat_arch*) ((char*) fat + sizeof(*fat));
+  for (; nfat_arch != 0; nfat_arch--, arch++) {
+    cpu_type_t cpu;
+    uint32_t off;
+    uint32_t size;
+
+    cpu = arch->cputype;
+    if (swap)
+      cpu = OSSwapInt32(cpu);
+    if (((cpu & CPU_ARCH_ABI64) == CPU_ARCH_ABI64) != opts->fat64)
+      continue;
+
+    off = arch->offset;
+    size = arch->size;
+    if (swap) {
+      off = OSSwapInt32(off);
+      size = OSSwapInt32(size);
+    }
+
+    obj->header = (struct mach_header*) ((char*) obj->header + off);
+    obj->size = size;
+    return cd_ok();
+  }
+
+  return cd_error_str(kCDErrNotFound, "FAT subobject not found");
 }
 
 
@@ -111,7 +246,7 @@ int cd_mach_obj_is_core(cd_mach_obj_t* obj) {
 }
 
 
-#define CD_ITERATE_LCMDS(BODY)                                                \
+#define CD_ITERATE_LCMDS(HEADER, SIZE, BODY)                                  \
     do {                                                                      \
       size_t sz;                                                              \
       char* ptr;                                                              \
@@ -122,10 +257,9 @@ int cd_mach_obj_is_core(cd_mach_obj_t* obj) {
           sizeof(struct mach_header_64) :                                     \
           sizeof(struct mach_header);                                         \
       /* Go through load commands to find matching segment */                 \
-      ptr = (char*) obj->addr + sz;                                           \
-      end = (char*) obj->addr + obj->size;                                    \
-      left = obj->header->ncmds;                                              \
-      for (left = obj->header->ncmds;                                         \
+      ptr = (char*) (HEADER) + sz;                                            \
+      end = (char*) (HEADER) + (SIZE);                                        \
+      for (left = (HEADER)->ncmds;                                            \
            left > 0;                                                          \
            ptr += cmd->cmdsize, left--) {                                     \
         if (ptr >= end) {                                                     \
@@ -147,7 +281,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
                                     void* arg) {
   cd_error_t err;
 
-  CD_ITERATE_LCMDS({
+  CD_ITERATE_LCMDS(obj->header, obj->size, {
     uint64_t vmaddr;
     uint64_t vmsize;
     uint64_t fileoff;
@@ -175,6 +309,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
 
     seg.start = vmaddr;
     seg.end = vmaddr + vmsize;
+    seg.fileoff = fileoff;
     seg.ptr = (char*) obj->addr + fileoff;
 
     /* Fill the splay tree */
@@ -194,8 +329,11 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
                                     cd_obj_iterate_sym_cb cb,
                                     void* arg) {
   cd_error_t err;
+  char* end;
 
-  CD_ITERATE_LCMDS({
+  end = (char*) obj->header + obj->size;
+
+  CD_ITERATE_LCMDS(obj->header, obj->size, {
     struct symtab_command* symtab;
     struct nlist* nl;
     struct nlist_64* nl64;
@@ -207,15 +345,11 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
 
     symtab = (struct symtab_command*) cmd;
     nsz = obj->is_x64 ? sizeof(struct nlist_64) : sizeof(struct nlist);
-    if (symtab->symoff + symtab->nsyms * nsz > obj->size) {
-      err = cd_error(kCDErrSymtabOOB);
-      goto fatal;
-    }
 
     if (obj->is_x64)
-      nl64 = (struct nlist_64*) ((char*) obj->addr + symtab->symoff);
+      nl64 = (struct nlist_64*) ((char*) obj->header + symtab->symoff);
     else
-      nl = (struct nlist*) ((char*) obj->addr + symtab->symoff);
+      nl = (struct nlist*) ((char*) obj->header + symtab->symoff);
 
     for (i = 0; i < symtab->nsyms; i++) {
       char* name;
@@ -224,11 +358,21 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
       cd_sym_t sym;
 
       /* XXX Add bounds checks */
-      name = obj->addr;
+      name = (char*) obj->header;
       if (obj->is_x64) {
+        if ((char*) &nl64[i] >= end) {
+          err = cd_error(kCDErrSymtabOOB);
+          goto fatal;
+        }
+
         name += symtab->stroff + nl64[i].n_un.n_strx;
         type = nl64[i].n_type;
       } else {
+        if ((char*) &nl[i] >= end) {
+          err = cd_error(kCDErrSymtabOOB);
+          goto fatal;
+        }
+
         name += symtab->stroff + nl[i].n_un.n_strx;
         type = nl[i].n_type;
       }
@@ -239,9 +383,19 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
       else
         value = nl[i].n_value;
 
+      if (name >= end) {
+        err = cd_error(kCDErrSymtabOOB);
+        goto fatal;
+      }
+
       sym.name = name;
       sym.nlen = strlen(name);
       sym.value = value;
+      if (obj->is_x64)
+        sym.sect = nl64[i].n_sect;
+      else
+        sym.sect = nl[i].n_sect;
+
       err = cb((cd_obj_t*) obj, &sym, arg);
       if (!cd_is_ok(err))
         goto fatal;
@@ -266,7 +420,7 @@ cd_error_t cd_mach_obj_get_thread(cd_mach_obj_t* obj,
     goto fatal;
   }
 
-  CD_ITERATE_LCMDS({
+  CD_ITERATE_LCMDS(obj->header, obj->size, {
     char* ptr;
     size_t size;
     char* end;
@@ -366,6 +520,177 @@ cd_error_t cd_mach_obj_get_thread(cd_mach_obj_t* obj,
 
 fatal:
   return err;
+}
+
+
+cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj, cd_segment_t* seg) {
+  uint64_t off;
+  uint64_t size;
+
+  /* Found everything - no point in continuing */
+  if (obj->dyld != NULL)
+    return cd_error(kCDErrSkip);
+
+  size = seg->end - seg->start;
+  for (off = 0; off < size; off += 0x1000) {
+    struct mach_header* hdr;
+
+    hdr = (struct mach_header*) (seg->ptr + off);
+    if (hdr->magic != MH_MAGIC && hdr->magic != MH_MAGIC_64)
+      continue;
+
+    if (hdr->filetype == MH_DYLINKER && obj->dyld == NULL) {
+      obj->dyld = hdr;
+      obj->dyld_off = seg->start + off;
+      obj->dyld_size = size - off;
+      break;
+    }
+  }
+  return cd_ok();
+}
+
+
+cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
+  cd_error_t err;
+  cd_mach_opts_t opts;
+
+  obj->dyld = NULL;
+  obj->dyld_path = NULL;
+  obj->dyld_obj = NULL;
+  obj->dyld_fd = -1;
+
+  err = cd_mach_obj_method->obj_iterate_segs(
+      (cd_obj_t*) obj,
+      (cd_obj_iterate_seg_cb) cd_mach_obj_locate_seg_cb,
+      NULL);
+
+  if (obj->dyld == NULL) {
+    err = cd_error_str(kCDErrNotFound, "dylinker not found");
+    goto fatal;
+  }
+
+  if (err.code != kCDErrSkip)
+    goto fatal;
+
+  CD_ITERATE_LCMDS(obj->dyld, obj->dyld_size, {
+    struct dylinker_command* dcmd;
+
+    if (cmd->cmd != LC_ID_DYLINKER)
+      continue;
+
+    dcmd = (struct dylinker_command*) cmd;
+    obj->dyld_path = (char*) dcmd + dcmd->name.offset;
+  });
+
+  if (obj->dyld_path == NULL) {
+    err = cd_error_str(kCDErrNotFound, "dyld path not found");
+    goto fatal;
+  }
+
+  obj->dyld_fd = open(obj->dyld_path, O_RDONLY);
+  if (obj->dyld_fd == -1) {
+    err = cd_error_num(kCDErrBinaryNotFound, errno);
+    goto fatal;
+  }
+
+  opts.fat64 = obj->is_x64;
+  obj->dyld_obj = cd_obj_new_ex(cd_mach_obj_method, obj->dyld_fd, &opts, &err);
+  if (!cd_is_ok(err)) {
+    close(obj->dyld_fd);
+    obj->dyld_fd = -1;
+    goto failed_obj_new;
+  }
+
+  err = cd_mach_obj_locate_final(obj);
+  if (!cd_is_ok(err))
+    goto failed_get_sym;
+
+  QUEUE_INSERT_TAIL(&obj->dso, &obj->dyld_obj->member);
+
+  return cd_ok();
+
+failed_get_sym:
+  cd_obj_free(obj->dyld_obj);
+
+failed_obj_new:
+  close(obj->dyld_fd);
+
+fatal:
+  return err;
+}
+
+
+cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
+  cd_error_t err;
+  int64_t slide;
+  uint64_t infos_off;
+  int i;
+
+  /* Figure out the ASLR slide value */
+  err = cd_obj_init_segments((cd_obj_t*) obj->dyld_obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  for (i = 0; i < obj->dyld_obj->segment_count; i++) {
+    cd_segment_t* seg;
+
+    seg = &obj->dyld_obj->segments[i];
+    if (seg->fileoff != 0)
+      continue;
+
+    slide = (int64_t) obj->dyld_off - seg->start;
+    break;
+  }
+
+  if (i == obj->dyld_obj->segment_count)
+    return cd_error_str(kCDErrNotFound, "0-fileoff dyld segment");
+
+  err = cd_obj_get_sym(obj->dyld_obj, "_dyld_all_image_infos", &infos_off);
+  if (!cd_is_ok(err))
+    return err;
+
+  infos_off += slide;
+
+  if (obj->is_x64) {
+    cd_mach_dyld_infos_t* infos;
+
+    err = cd_obj_get((cd_obj_t*) obj,
+                     infos_off,
+                     sizeof(*infos),
+                     (void**) &infos);
+    if (!cd_is_ok(err))
+      return err;
+
+    obj->dyld_all_infos = *infos;
+  } else {
+    cd_mach_dyld_infos32_t* infos;
+
+    err = cd_obj_get((cd_obj_t*) obj,
+                     infos_off,
+                     sizeof(*infos),
+                     (void**) &infos);
+    if (!cd_is_ok(err))
+      return err;
+
+    obj->dyld_all_infos.version = infos->version;
+    obj->dyld_all_infos.infoArrayCount = infos->infoArrayCount;
+    obj->dyld_all_infos.infoArray = infos->infoArray;
+    obj->dyld_all_infos.notification = infos->notification;
+    obj->dyld_all_infos.loadAddr = infos->loadAddr;
+    obj->dyld_all_infos.jitInfo = infos->jitInfo;
+    obj->dyld_all_infos.dyldVersion = infos->dyldVersion;
+    obj->dyld_all_infos.errorMessage = infos->errorMessage;
+    obj->dyld_all_infos.termFlags = infos->termFlags;
+    obj->dyld_all_infos.shmPage = infos->shmPage;
+    obj->dyld_all_infos.sysOrderFlag = infos->sysOrderFlag;
+    obj->dyld_all_infos.uuidArrayCount = infos->uuidArrayCount;
+    obj->dyld_all_infos.uuidArray = infos->uuidArray;
+    obj->dyld_all_infos.infosAddress = infos->infosAddress;
+    obj->dyld_all_infos.initImageCount = infos->initImageCount;
+    memcpy(obj->dyld_all_infos.uuid, infos->uuid, sizeof(infos->uuid));
+  }
+
+  return cd_ok();
 }
 
 

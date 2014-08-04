@@ -32,7 +32,7 @@ struct cd_elf_obj_s {
 };
 
 
-cd_elf_obj_t* cd_elf_obj_new(int fd, cd_error_t* err) {
+cd_elf_obj_t* cd_elf_obj_new(int fd, void* opts, cd_error_t* err) {
   cd_elf_obj_t* obj;
   struct stat sbuf;
   char* ptr;
@@ -189,6 +189,7 @@ cd_error_t cd_elf_obj_iterate_segs(cd_elf_obj_t* obj,
 
     seg.start = vmaddr;
     seg.end = vmaddr + vmsize;
+    seg.fileoff = fileoff;
     seg.ptr = (char*) obj->addr + fileoff;
 
     err = cb((cd_obj_t*) obj, &seg, arg);
