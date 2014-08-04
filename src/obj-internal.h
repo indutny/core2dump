@@ -66,6 +66,7 @@ struct cd_segment_s {
   uint64_t start;
   uint64_t end;
   uint64_t fileoff;
+  uint64_t sects;
 
   char* ptr;
 };

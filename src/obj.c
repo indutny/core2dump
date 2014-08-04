@@ -321,7 +321,6 @@ void cd_obj_internal_free(cd_obj_t* obj) {
     cd_obj_t* dso;
 
     q = QUEUE_HEAD(&obj->dso);
-    QUEUE_REMOVE(q);
     dso = container_of(q, cd_obj_t, member);
 
     dso->method->obj_free(dso);
@@ -329,6 +328,9 @@ void cd_obj_internal_free(cd_obj_t* obj) {
 
   close(obj->fd);
   obj->fd = -1;
+
+  if (!QUEUE_EMPTY(&obj->member))
+    QUEUE_REMOVE(&obj->member);
 }
 
 

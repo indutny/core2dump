@@ -84,6 +84,7 @@ struct cd_mach_dyld_image32_s {
 struct cd_mach_obj_s {
   CD_OBJ_INTERNAL_FIELDS
 
+  int64_t aslr;
   struct mach_header* header;
   struct mach_header* dyld;
   uint64_t dyld_off;
@@ -104,6 +105,8 @@ static cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj);
 static cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj,
                                             cd_segment_t* seg);
 static cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj);
+static cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj,
+                                        cd_mach_opts_t* opts);
 
 
 cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
@@ -182,8 +185,13 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
     goto failed_magic2;
 
   /* Link DSOs */
-  if (opts != NULL)
+  if (opts != NULL) {
+    *err = cd_mach_obj_init_aslr(obj, opts);
+    if (!cd_is_ok(*err))
+      goto failed_magic2;
+
     QUEUE_INSERT_TAIL(&opts->parent->dso, &obj->member);
+  }
 
   return obj;
 
@@ -209,6 +217,33 @@ void cd_mach_obj_free(cd_mach_obj_t* obj) {
   cd_obj_internal_free((cd_obj_t*) obj);
 
   free(obj);
+}
+
+
+cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
+  cd_error_t err;
+  int i;
+
+  /* Figure out the ASLR slide value */
+  err = cd_obj_init_segments((cd_obj_t*) obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  for (i = 0; i < obj->segment_count; i++) {
+    cd_segment_t* seg;
+
+    seg = &obj->segments[i];
+    if (seg->fileoff != 0 || seg->sects == 0)
+      continue;
+
+    obj->aslr = (int64_t) opts->reloc - seg->start;
+    break;
+  }
+
+  if (i == obj->segment_count)
+    return cd_error_str(kCDErrNotFound, "0-fileoff dyld segment");
+
+  return cd_ok();
 }
 
 
@@ -300,6 +335,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
     uint64_t vmaddr;
     uint64_t vmsize;
     uint64_t fileoff;
+    uint64_t sects;
     cd_segment_t seg;
 
     if (cmd->cmd == LC_SEGMENT) {
@@ -310,6 +346,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
       vmaddr = seg->vmaddr;
       vmsize = seg->vmsize;
       fileoff = seg->fileoff;
+      sects = seg->nsects;
     } else if (cmd->cmd == LC_SEGMENT_64) {
       struct segment_command_64* seg;
 
@@ -318,6 +355,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
       vmaddr = seg->vmaddr;
       vmsize = seg->vmsize;
       fileoff = seg->fileoff;
+      sects = seg->nsects;
     } else {
       continue;
     }
@@ -325,6 +363,7 @@ cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
     seg.start = vmaddr;
     seg.end = vmaddr + vmsize;
     seg.fileoff = fileoff;
+    seg.sects = sects;
     seg.ptr = (char*) obj->addr + fileoff;
 
     /* Fill the splay tree */
@@ -602,7 +641,7 @@ cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
   }
 
   opts.parent = obj;
-  opts.reloc = (intptr_t) obj->dyld;
+  opts.reloc = obj->dyld_off;
   obj->dyld_obj = cd_obj_new_ex(cd_mach_obj_method,
                                 obj->dyld_path,
                                 &opts,
@@ -626,38 +665,17 @@ fatal:
 
 cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
   cd_error_t err;
-  int64_t slide;
   uint64_t infos_off;
-  int i;
   cd_mach_dyld_infos_t* infos;
   uint64_t off;
   uint64_t info_delta;
   char* info_array;
 
-  /* Figure out the ASLR slide value */
-  err = cd_obj_init_segments((cd_obj_t*) obj->dyld_obj);
-  if (!cd_is_ok(err))
-    return err;
-
-  for (i = 0; i < obj->dyld_obj->segment_count; i++) {
-    cd_segment_t* seg;
-
-    seg = &obj->dyld_obj->segments[i];
-    if (seg->fileoff != 0)
-      continue;
-
-    slide = (int64_t) obj->dyld_off - seg->start;
-    break;
-  }
-
-  if (i == obj->dyld_obj->segment_count)
-    return cd_error_str(kCDErrNotFound, "0-fileoff dyld segment");
-
   err = cd_obj_get_sym(obj->dyld_obj, "_dyld_all_image_infos", &infos_off);
   if (!cd_is_ok(err))
     return err;
 
-  infos_off += slide;
+  infos_off += ((cd_mach_obj_t*) obj->dyld_obj)->aslr;
 
   if (obj->is_x64) {
     cd_mach_dyld_infos_t* infos;
