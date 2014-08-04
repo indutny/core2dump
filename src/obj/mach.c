@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +10,6 @@
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
 #include <libkern/OSByteOrder.h>
-#include <unistd.h>
 
 #include "obj/mach.h"
 #include "error.h"
@@ -23,6 +21,8 @@ typedef struct cd_mach_obj_s cd_mach_obj_t;
 typedef struct cd_mach_opts_s cd_mach_opts_t;
 typedef struct cd_mach_dyld_infos_s cd_mach_dyld_infos_t;
 typedef struct cd_mach_dyld_infos32_s cd_mach_dyld_infos32_t;
+typedef struct cd_mach_dyld_image_s cd_mach_dyld_image_t;
+typedef struct cd_mach_dyld_image32_s cd_mach_dyld_image32_t;
 
 /* See mach-o/dyld_images.h */
 struct cd_mach_dyld_infos_s {
@@ -69,6 +69,18 @@ struct cd_mach_dyld_infos32_s {
   unsigned char uuid[16];
 };
 
+struct cd_mach_dyld_image_s {
+  uint64_t addr;
+  uint64_t path;
+  uint64_t mod_date;
+};
+
+struct cd_mach_dyld_image32_s {
+  uint32_t addr;
+  uint32_t path;
+  uint32_t mod_date;
+};
+
 struct cd_mach_obj_s {
   CD_OBJ_INTERNAL_FIELDS
 
@@ -78,13 +90,13 @@ struct cd_mach_obj_s {
   uint64_t dyld_size;
   cd_mach_dyld_infos_t dyld_all_infos;
   char* dyld_path;
-  int dyld_fd;
   cd_obj_t* dyld_obj;
 };
 
 
 struct cd_mach_opts_s {
-  int fat64;
+  cd_mach_obj_t* parent;
+  uint64_t reloc;
 };
 
 static cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts);
@@ -169,6 +181,10 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
   if (!cd_is_ok(*err))
     goto failed_magic2;
 
+  /* Link DSOs */
+  if (opts != NULL)
+    QUEUE_INSERT_TAIL(&opts->parent->dso, &obj->member);
+
   return obj;
 
 failed_magic2:
@@ -191,7 +207,6 @@ void cd_mach_obj_free(cd_mach_obj_t* obj) {
   obj->addr = NULL;
 
   cd_obj_internal_free((cd_obj_t*) obj);
-  close(obj->dyld_fd);
 
   free(obj);
 }
@@ -222,7 +237,7 @@ cd_error_t cd_mach_fat_unwrap(cd_mach_obj_t* obj, cd_mach_opts_t* opts) {
     cpu = arch->cputype;
     if (swap)
       cpu = OSSwapInt32(cpu);
-    if (((cpu & CPU_ARCH_ABI64) == CPU_ARCH_ABI64) != opts->fat64)
+    if (((cpu & CPU_ARCH_ABI64) == CPU_ARCH_ABI64) != opts->parent->is_x64)
       continue;
 
     off = arch->offset;
@@ -557,7 +572,6 @@ cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
   obj->dyld = NULL;
   obj->dyld_path = NULL;
   obj->dyld_obj = NULL;
-  obj->dyld_fd = -1;
 
   err = cd_mach_obj_method->obj_iterate_segs(
       (cd_obj_t*) obj,
@@ -587,33 +601,23 @@ cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
     goto fatal;
   }
 
-  obj->dyld_fd = open(obj->dyld_path, O_RDONLY);
-  if (obj->dyld_fd == -1) {
-    err = cd_error_num(kCDErrBinaryNotFound, errno);
+  opts.parent = obj;
+  opts.reloc = (intptr_t) obj->dyld;
+  obj->dyld_obj = cd_obj_new_ex(cd_mach_obj_method,
+                                obj->dyld_path,
+                                &opts,
+                                &err);
+  if (!cd_is_ok(err))
     goto fatal;
-  }
-
-  opts.fat64 = obj->is_x64;
-  obj->dyld_obj = cd_obj_new_ex(cd_mach_obj_method, obj->dyld_fd, &opts, &err);
-  if (!cd_is_ok(err)) {
-    close(obj->dyld_fd);
-    obj->dyld_fd = -1;
-    goto failed_obj_new;
-  }
 
   err = cd_mach_obj_locate_final(obj);
   if (!cd_is_ok(err))
     goto failed_get_sym;
 
-  QUEUE_INSERT_TAIL(&obj->dso, &obj->dyld_obj->member);
-
   return cd_ok();
 
 failed_get_sym:
   cd_obj_free(obj->dyld_obj);
-
-failed_obj_new:
-  close(obj->dyld_fd);
 
 fatal:
   return err;
@@ -625,6 +629,10 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
   int64_t slide;
   uint64_t infos_off;
   int i;
+  cd_mach_dyld_infos_t* infos;
+  uint64_t off;
+  uint64_t info_delta;
+  char* info_array;
 
   /* Figure out the ASLR slide value */
   err = cd_obj_init_segments((cd_obj_t*) obj->dyld_obj);
@@ -688,6 +696,53 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     obj->dyld_all_infos.infosAddress = infos->infosAddress;
     obj->dyld_all_infos.initImageCount = infos->initImageCount;
     memcpy(obj->dyld_all_infos.uuid, infos->uuid, sizeof(infos->uuid));
+  }
+  infos = &obj->dyld_all_infos;
+  if (obj->is_x64)
+    info_delta = sizeof(cd_mach_dyld_image_t);
+  else
+    info_delta = sizeof(cd_mach_dyld_image32_t);
+
+  err = cd_obj_get((cd_obj_t*) obj,
+                   infos->infoArray,
+                   info_delta * infos->infoArrayCount,
+                   (void**) &info_array);
+  if (!cd_is_ok(err))
+    return err;
+
+  for (off = 0; off < infos->infoArrayCount; off++, info_array += info_delta) {
+    uint64_t addr;
+    uint64_t path;
+    char* cpath;
+    cd_obj_t* image;
+    cd_mach_opts_t opts;
+
+    if (obj->is_x64) {
+      cd_mach_dyld_image_t* image;
+
+      image = (cd_mach_dyld_image_t*) info_array;
+      addr = image->addr;
+      path = image->path;
+    } else {
+      cd_mach_dyld_image32_t* image;
+
+      image = (cd_mach_dyld_image32_t*) info_array;
+      addr = image->addr;
+      path = image->path;
+    }
+
+    if (path == 0)
+      continue;
+
+    err = cd_obj_get((cd_obj_t*) obj, path, 1, (void**) &cpath);
+    if (!cd_is_ok(err))
+      return err;
+
+    opts.parent = obj;
+    opts.reloc = addr;
+    image = cd_obj_new_ex(cd_mach_obj_method, cpath, &opts, &err);
+    if (!cd_is_ok(err))
+      return err;
   }
 
   return cd_ok();

@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
 
 static const int kCDSymtabInitialSize = 16384;
@@ -32,20 +35,33 @@ static cd_error_t cd_obj_insert_syms(cd_obj_t* obj,
 
 /* Wrappers around method */
 
-cd_obj_t* cd_obj_new(cd_obj_method_t* method, int fd, cd_error_t* err) {
-  return cd_obj_new_ex(method, fd, NULL, err);
+cd_obj_t* cd_obj_new(cd_obj_method_t* method,
+                     const char* path,
+                     cd_error_t* err) {
+  return cd_obj_new_ex(method, path, NULL, err);
 }
 
 
 cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
-                        int fd,
+                        const char* path,
                         void* opts,
                         cd_error_t* err) {
   cd_obj_t* res;
+  int fd;
+
+  fd = open(path, O_RDONLY);
+  if (fd == -1) {
+    *err = cd_error_num(kCDErrFileNotFound, errno);
+    return NULL;
+  }
 
   res = method->obj_new(fd, opts, err);
-  if (cd_is_ok(*err))
+  if (cd_is_ok(*err)) {
     res->method = method;
+    res->fd = fd;
+  } else {
+    close(fd);
+  }
 
   return res;
 }
@@ -310,6 +326,9 @@ void cd_obj_internal_free(cd_obj_t* obj) {
 
     dso->method->obj_free(dso);
   }
+
+  close(obj->fd);
+  obj->fd = -1;
 }
 
 

@@ -16,7 +16,9 @@ struct cd_obj_s {
   CD_OBJ_INTERNAL_FIELDS
 };
 
-cd_obj_t* cd_obj_new(struct cd_obj_method_s* method, int fd, cd_error_t* err);
+cd_obj_t* cd_obj_new(struct cd_obj_method_s* method,
+                     const char* path,
+                     cd_error_t* err);
 void cd_obj_free(cd_obj_t* obj);
 int cd_obj_is_x64(cd_obj_t* obj);
 int cd_obj_is_core(cd_obj_t* obj);

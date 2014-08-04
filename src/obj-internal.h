@@ -41,6 +41,7 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
 #define CD_OBJ_INTERNAL_FIELDS                                                \
     QUEUE member;                                                             \
     struct cd_obj_method_s* method;                                           \
+    int fd;                                                                   \
     void* addr;                                                               \
     size_t size;                                                              \
     int is_x64;                                                               \
@@ -77,7 +78,7 @@ struct cd_sym_s {
 };
 
 struct cd_obj_s* cd_obj_new_ex(cd_obj_method_t* method,
-                               int fd,
+                               const char* path,
                                void* opts,
                                cd_error_t* err);
 cd_error_t cd_obj_internal_init(struct cd_obj_s* obj);

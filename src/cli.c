@@ -26,10 +26,7 @@ struct cd_argv_s {
 };
 
 static cd_error_t run(cd_argv_t* argv);
-static cd_error_t cd_obj2json(int core,
-                              int binary,
-                              int output,
-                              cd_argv_t* argv);
+static cd_error_t cd_obj2json(int output, cd_argv_t* argv);
 static cd_error_t cd_print_dump(cd_state_t* state, cd_writebuf_t* buf);
 static cd_error_t cd_print_trace(cd_state_t* state, cd_writebuf_t* buf);
 static void cd_print_nodes(cd_state_t* state, cd_writebuf_t* buf);
@@ -136,47 +133,21 @@ int main(int argc, char** argv) {
 /* Open files and execute obj2json */
 cd_error_t run(cd_argv_t* argv) {
   cd_error_t err;
-  struct {
-    int core;
-    int output;
-    int binary;
-  } fds;
+  int output;
 
-  fds.core = open(argv->core, O_RDONLY);
-  if (fds.core == -1) {
-    err = cd_error_num(kCDErrCoreNotFound, errno);
-    goto failed_open_core;
-  }
+  output = open(argv->output, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+  if (output == -1)
+    return cd_error_num(kCDErrFileNotFound, errno);
 
-  fds.binary = open(argv->binary, O_RDONLY);
-  if (fds.binary == -1) {
-    err = cd_error_num(kCDErrBinaryNotFound, errno);
-    goto failed_open_binary;
-  }
-
-  fds.output = open(argv->output, O_WRONLY | O_CREAT | O_TRUNC, 0755);
-  if (fds.output == -1) {
-    err = cd_error_num(kCDErrOutputNotFound, errno);
-    goto failed_open_output;
-  }
-
-  err = cd_obj2json(fds.core, fds.binary, fds.output, argv);
+  err = cd_obj2json(output, argv);
 
   /* Clean-up */
-  close(fds.output);
-
-failed_open_output:
-  close(fds.binary);
-
-failed_open_binary:
-  close(fds.core);
-
-failed_open_core:
+  close(output);
   return err;
 }
 
 
-cd_error_t cd_obj2json(int input, int binary, int output, cd_argv_t* argv) {
+cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
   cd_error_t err;
   cd_state_t state;
   cd_writebuf_t buf;
@@ -190,13 +161,13 @@ cd_error_t cd_obj2json(int input, int binary, int output, cd_argv_t* argv) {
   abort();
 #endif
 
-  state.core = cd_obj_new(method, input, &err);
+  state.core = cd_obj_new(method, argv->core, &err);
   if (!cd_is_ok(err))
     goto fatal;
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
 
-  state.binary = cd_obj_new(method, binary, &err);
+  state.binary = cd_obj_new(method, argv->binary, &err);
   if (!cd_is_ok(err))
     goto failed_binary_obj;
 

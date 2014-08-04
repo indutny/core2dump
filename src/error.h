@@ -6,9 +6,7 @@ typedef enum cd_error_code_e cd_error_code_t;
 
 #define CD_ERROR_ENUM(V)                                                      \
     V(Ok, 0x0)                                                                \
-    V(CoreNotFound, 0x1)                                                      \
-    V(BinaryNotFound, 0x2)                                                    \
-    V(OutputNotFound, 0x3)                                                    \
+    V(FileNotFound, 0x1)                                                      \
     V(BigEndianMagic, 0x4)                                                    \
     V(InvalidMagic, 0x5)                                                      \
     V(NotEnoughMagic, 0x6)                                                    \
