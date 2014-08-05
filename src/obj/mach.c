@@ -198,7 +198,7 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_obj_opts_t* opts, cd_error_t* err) {
   if (!cd_is_ok(*err))
     goto failed_magic2;
 
-  if (opts != NULL && opts.reloc != 0) {
+  if (opts != NULL && opts->reloc != 0) {
     *err = cd_mach_obj_init_aslr(obj, opts);
     if (!cd_is_ok(*err))
       goto failed_magic2;
