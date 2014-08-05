@@ -24,6 +24,9 @@ typedef struct cd_mach_dyld_infos_s cd_mach_dyld_infos_t;
 typedef struct cd_mach_dyld_infos32_s cd_mach_dyld_infos32_t;
 typedef struct cd_mach_dyld_image_s cd_mach_dyld_image_t;
 typedef struct cd_mach_dyld_image32_s cd_mach_dyld_image32_t;
+typedef cd_error_t (*cd_mach_obj_iterate_lcmds_cb)(cd_mach_obj_t* obj,
+                                                   struct load_command* cmd,
+                                                   void* arg);
 
 /* See mach-o/dyld_images.h */
 struct cd_mach_dyld_infos_s {
@@ -107,6 +110,23 @@ static cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj,
 static cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj);
 static cd_error_t cd_mach_obj_init_aslr(cd_mach_obj_t* obj,
                                         cd_mach_opts_t* opts);
+static cd_error_t cd_mach_obj_iterate_lcmds(cd_mach_obj_t* obj,
+                                            struct mach_header* hdr,
+                                            size_t size,
+                                            cd_mach_obj_iterate_lcmds_cb cb,
+                                            void* arg);
+static cd_error_t cd_mach_iterate_segs_lcmd_cb(cd_mach_obj_t* obj,
+                                               struct load_command* cmd,
+                                               void* arg);
+static cd_error_t cd_mach_iterate_syms_lcmd_cb(cd_mach_obj_t* obj,
+                                               struct load_command* cmd,
+                                               void* arg);
+static cd_error_t cd_mach_get_thread_lcmd_cb(cd_mach_obj_t* obj,
+                                             struct load_command* cmd,
+                                             void* arg);
+static cd_error_t cd_mach_obj_locate_iterate(cd_mach_obj_t* obj,
+                                             struct load_command* cmd,
+                                             void* arg);
 
 
 cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
@@ -298,86 +318,196 @@ int cd_mach_obj_is_core(cd_mach_obj_t* obj) {
 }
 
 
-#define CD_ITERATE_LCMDS(HEADER, SIZE, BODY)                                  \
-    do {                                                                      \
-      size_t sz;                                                              \
-      char* ptr;                                                              \
-      char* end;                                                              \
-      uint32_t left;                                                          \
-      struct load_command* cmd;                                               \
-      sz = obj->is_x64 ?                                                      \
-          sizeof(struct mach_header_64) :                                     \
-          sizeof(struct mach_header);                                         \
-      /* Go through load commands to find matching segment */                 \
-      ptr = (char*) (HEADER) + sz;                                            \
-      end = (char*) (HEADER) + (SIZE);                                        \
-      for (left = (HEADER)->ncmds;                                            \
-           left > 0;                                                          \
-           ptr += cmd->cmdsize, left--) {                                     \
-        if (ptr >= end) {                                                     \
-          err = cd_error(kCDErrLoadCommandOOB);                               \
-          goto fatal;                                                         \
-        }                                                                     \
-        cmd = (struct load_command*) ptr;                                     \
-        if (ptr + cmd->cmdsize > end) {                                       \
-          err = cd_error(kCDErrLoadCommandOOB);                               \
-          goto fatal;                                                         \
-        }                                                                     \
-        do BODY while(0);                                                     \
-      }                                                                       \
-    } while (0);                                                              \
+cd_error_t cd_mach_obj_iterate_lcmds(cd_mach_obj_t* obj,
+                                     struct mach_header* hdr,
+                                     size_t size,
+                                     cd_mach_obj_iterate_lcmds_cb cb,
+                                     void* arg) {
+  size_t sz;
+  char* ptr;
+  char* end;
+  uint32_t left;
+  struct load_command* cmd;
+
+  sz = obj->is_x64 ?
+      sizeof(struct mach_header_64) :
+      sizeof(struct mach_header);
+
+  /* Go through load commands to find matching segment */
+  ptr = (char*) hdr + sz;
+  end = (char*) hdr + size;
+  for (left = hdr->ncmds;
+       left > 0;
+       ptr += cmd->cmdsize, left--) {
+    cd_error_t err;
+
+    if (ptr >= end)
+      return cd_error(kCDErrLoadCommandOOB);
+
+    cmd = (struct load_command*) ptr;
+    if (ptr + cmd->cmdsize > end)
+      return cd_error(kCDErrLoadCommandOOB);
+
+    err = cb(obj, cmd, arg);
+    if (!cd_is_ok(err))
+      return err;
+  }
+  return cd_ok();
+}
+
+
+typedef struct cd_mach_iterate_segs_s cd_mach_iterate_segs_t;
+
+struct cd_mach_iterate_segs_s {
+  cd_obj_iterate_seg_cb cb;
+  void* arg;
+};
+
+
+cd_error_t cd_mach_iterate_segs_lcmd_cb(cd_mach_obj_t* obj,
+                                        struct load_command* cmd,
+                                        void* arg) {
+  uint64_t vmaddr;
+  uint64_t vmsize;
+  uint64_t fileoff;
+  uint64_t sects;
+  cd_segment_t seg;
+  cd_mach_iterate_segs_t* st;
+
+  st = (cd_mach_iterate_segs_t*) arg;
+
+  if (cmd->cmd == LC_SEGMENT) {
+    struct segment_command* seg;
+
+    seg = (struct segment_command*) cmd;
+
+    vmaddr = seg->vmaddr;
+    vmsize = seg->vmsize;
+    fileoff = seg->fileoff;
+    sects = seg->nsects;
+  } else if (cmd->cmd == LC_SEGMENT_64) {
+    struct segment_command_64* seg;
+
+    seg = (struct segment_command_64*) cmd;
+
+    vmaddr = seg->vmaddr;
+    vmsize = seg->vmsize;
+    fileoff = seg->fileoff;
+    sects = seg->nsects;
+  } else {
+    /* Continue */
+    return cd_ok();
+  }
+
+  seg.start = vmaddr;
+  seg.end = vmaddr + vmsize;
+  seg.fileoff = fileoff;
+  seg.sects = sects;
+  seg.ptr = (char*) obj->addr + fileoff;
+
+  return st->cb((cd_obj_t*) obj, &seg, st->arg);
+}
 
 
 cd_error_t cd_mach_obj_iterate_segs(cd_mach_obj_t* obj,
                                     cd_obj_iterate_seg_cb cb,
                                     void* arg) {
-  cd_error_t err;
+  cd_mach_iterate_segs_t state;
 
-  CD_ITERATE_LCMDS(obj->header, obj->size, {
-    uint64_t vmaddr;
-    uint64_t vmsize;
-    uint64_t fileoff;
-    uint64_t sects;
-    cd_segment_t seg;
+  state.cb = cb;
+  state.arg = arg;
 
-    if (cmd->cmd == LC_SEGMENT) {
-      struct segment_command* seg;
+  return cd_mach_obj_iterate_lcmds(obj,
+                                   obj->header,
+                                   obj->size,
+                                   cd_mach_iterate_segs_lcmd_cb,
+                                   &state);
+}
 
-      seg = (struct segment_command*) cmd;
 
-      vmaddr = seg->vmaddr;
-      vmsize = seg->vmsize;
-      fileoff = seg->fileoff;
-      sects = seg->nsects;
-    } else if (cmd->cmd == LC_SEGMENT_64) {
-      struct segment_command_64* seg;
+typedef struct cd_mach_iterate_syms_s cd_mach_iterate_syms_t;
 
-      seg = (struct segment_command_64*) cmd;
+struct cd_mach_iterate_syms_s {
+  cd_obj_iterate_sym_cb cb;
+  void* arg;
+};
 
-      vmaddr = seg->vmaddr;
-      vmsize = seg->vmsize;
-      fileoff = seg->fileoff;
-      sects = seg->nsects;
+
+cd_error_t cd_mach_iterate_syms_lcmd_cb(cd_mach_obj_t* obj,
+                                        struct load_command* cmd,
+                                        void* arg) {
+  char* end;
+  struct symtab_command* symtab;
+  struct nlist* nl;
+  struct nlist_64* nl64;
+  size_t nsz;
+  unsigned int i;
+  cd_mach_iterate_syms_t* st;
+
+  st = (cd_mach_iterate_syms_t*) arg;
+
+  if (cmd->cmd != LC_SYMTAB)
+    return cd_ok();
+
+  end = (char*) obj->header + obj->size;
+
+  symtab = (struct symtab_command*) cmd;
+  nsz = obj->is_x64 ? sizeof(struct nlist_64) : sizeof(struct nlist);
+
+  if (obj->is_x64)
+    nl64 = (struct nlist_64*) ((char*) obj->header + symtab->symoff);
+  else
+    nl = (struct nlist*) ((char*) obj->header + symtab->symoff);
+
+  for (i = 0; i < symtab->nsyms; i++) {
+    cd_error_t err;
+    char* name;
+    uint8_t type;
+    uint64_t value;
+    cd_sym_t sym;
+
+    /* XXX Add bounds checks */
+    name = (char*) obj->header;
+    if (obj->is_x64) {
+      if ((char*) &nl64[i] >= end)
+        return cd_error(kCDErrSymtabOOB);
+
+      name += symtab->stroff + nl64[i].n_un.n_strx;
+      type = nl64[i].n_type;
     } else {
-      continue;
+      if ((char*) &nl[i] >= end)
+        return cd_error(kCDErrSymtabOOB);
+
+      name += symtab->stroff + nl[i].n_un.n_strx;
+      type = nl[i].n_type;
     }
 
-    seg.start = vmaddr;
-    seg.end = vmaddr + vmsize;
-    seg.fileoff = fileoff;
-    seg.sects = sects;
-    seg.ptr = (char*) obj->addr + fileoff;
+    /* Only external/global symbols are allowed */
+    if ((type & N_EXT) == 0)
+      continue;
 
-    /* Fill the splay tree */
-    err = cb((cd_obj_t*) obj, &seg, arg);
+    if (obj->is_x64)
+      value = nl64[i].n_value;
+    else
+      value = nl[i].n_value;
+
+    if (name >= end)
+      return cd_error(kCDErrSymtabOOB);
+
+    sym.name = name;
+    sym.nlen = strlen(name);
+    sym.value = value;
+    if (obj->is_x64)
+      sym.sect = nl64[i].n_sect;
+    else
+      sym.sect = nl[i].n_sect;
+
+    err = st->cb((cd_obj_t*) obj, &sym, st->arg);
     if (!cd_is_ok(err))
-      goto fatal;
-  })
+      return err;
+  }
 
   return cd_ok();
-
-fatal:
-  return err;
 }
 
 
@@ -385,87 +515,130 @@ cd_error_t cd_mach_obj_iterate_syms(cd_mach_obj_t* obj,
                                     cd_obj_iterate_sym_cb cb,
                                     void* arg) {
   cd_error_t err;
+  cd_mach_iterate_syms_t state;
+
+  state.cb = cb;
+  state.arg = arg;
+
+  err = cd_mach_obj_iterate_lcmds(obj,
+                                  obj->header,
+                                  obj->size,
+                                  cd_mach_iterate_syms_lcmd_cb,
+                                  &state);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+  else
+    return err;
+}
+
+
+typedef struct cd_mach_get_thread_s cd_mach_get_thread_t;
+
+struct cd_mach_get_thread_s {
+  cd_obj_thread_t* thread;
+  unsigned int index;
+};
+
+
+cd_error_t cd_mach_get_thread_lcmd_cb(cd_mach_obj_t* obj,
+                                      struct load_command* cmd,
+                                      void* arg) {
+  cd_mach_get_thread_t* st;
+  cd_obj_thread_t* thread;
+  char* ptr;
+  size_t size;
   char* end;
 
-  end = (char*) obj->header + obj->size;
+  st = (cd_mach_get_thread_t*) arg;
+  thread = st->thread;
 
-  CD_ITERATE_LCMDS(obj->header, obj->size, {
-    struct symtab_command* symtab;
-    struct nlist* nl;
-    struct nlist_64* nl64;
-    size_t nsz;
-    unsigned int i;
+  if (cmd->cmd != LC_THREAD)
+    return cd_ok();
 
-    if (cmd->cmd != LC_SYMTAB)
+  end = (char*) cmd + cmd->cmdsize;
+  for (ptr = (char*) cmd + 8; ptr < end; ptr += size) {
+    uint32_t flavor;
+    uint32_t count;
+    struct x86_thread_state* state;
+
+    flavor = *((uint32_t*) ptr);
+    count = *((uint32_t*) ptr + 1);
+    size = 8 + 4 * count;
+
+    /* Thread state is too big */
+    if (ptr + size > end)
+      return cd_error(kCDErrThreadStateOOB);
+
+    if (flavor != x86_THREAD_STATE)
       continue;
 
-    symtab = (struct symtab_command*) cmd;
-    nsz = obj->is_x64 ? sizeof(struct nlist_64) : sizeof(struct nlist);
+    if (count != x86_THREAD_STATE_COUNT)
+      return cd_error(kCDErrThreadStateInvalidSize);
 
-    if (obj->is_x64)
-      nl64 = (struct nlist_64*) ((char*) obj->header + symtab->symoff);
-    else
-      nl = (struct nlist*) ((char*) obj->header + symtab->symoff);
-
-    for (i = 0; i < symtab->nsyms; i++) {
-      char* name;
-      uint8_t type;
-      uint64_t value;
-      cd_sym_t sym;
-
-      /* XXX Add bounds checks */
-      name = (char*) obj->header;
-      if (obj->is_x64) {
-        if ((char*) &nl64[i] >= end) {
-          err = cd_error(kCDErrSymtabOOB);
-          goto fatal;
-        }
-
-        name += symtab->stroff + nl64[i].n_un.n_strx;
-        type = nl64[i].n_type;
-      } else {
-        if ((char*) &nl[i] >= end) {
-          err = cd_error(kCDErrSymtabOOB);
-          goto fatal;
-        }
-
-        name += symtab->stroff + nl[i].n_un.n_strx;
-        type = nl[i].n_type;
-      }
-
-      /* Only external/global symbols are allowed */
-      if ((type & N_EXT) == 0)
-        continue;
-
-      if (obj->is_x64)
-        value = nl64[i].n_value;
-      else
-        value = nl[i].n_value;
-
-      if (name >= end) {
-        err = cd_error(kCDErrSymtabOOB);
-        goto fatal;
-      }
-
-      sym.name = name;
-      sym.nlen = strlen(name);
-      sym.value = value;
-      if (obj->is_x64)
-        sym.sect = nl64[i].n_sect;
-      else
-        sym.sect = nl[i].n_sect;
-
-      err = cb((cd_obj_t*) obj, &sym, arg);
-      if (!cd_is_ok(err))
-        goto fatal;
+    /* We are looking for different index */
+    if (st->index != 0) {
+      st->index--;
+      continue;
     }
 
-    break;
-  })
-  return cd_ok();
+    state = (struct x86_thread_state*) (ptr + 8);
+    if (obj->is_x64) {
+      thread->regs.count = 21;
+      thread->regs.values[0] = state->uts.ts64.__rax;
+      thread->regs.values[1] = state->uts.ts64.__rbx;
+      thread->regs.values[2] = state->uts.ts64.__rcx;
+      thread->regs.values[3] = state->uts.ts64.__rdx;
+      thread->regs.values[4] = state->uts.ts64.__rdi;
+      thread->regs.values[5] = state->uts.ts64.__rsi;
+      thread->regs.values[6] = state->uts.ts64.__rbp;
+      thread->regs.values[7] = state->uts.ts64.__rsp;
+      thread->regs.values[8] = state->uts.ts64.__r8;
+      thread->regs.values[9] = state->uts.ts64.__r9;
+      thread->regs.values[10] = state->uts.ts64.__r10;
+      thread->regs.values[11] = state->uts.ts64.__r11;
+      thread->regs.values[12] = state->uts.ts64.__r12;
+      thread->regs.values[13] = state->uts.ts64.__r13;
+      thread->regs.values[14] = state->uts.ts64.__r14;
+      thread->regs.values[15] = state->uts.ts64.__r15;
+      thread->regs.values[16] = state->uts.ts64.__rip;
+      thread->regs.values[17] = state->uts.ts64.__rflags;
+      thread->regs.values[18] = state->uts.ts64.__cs;
+      thread->regs.values[19] = state->uts.ts64.__fs;
+      thread->regs.values[20] = state->uts.ts64.__gs;
 
-fatal:
-  return err;
+      thread->regs.ip = state->uts.ts64.__rip;
+      thread->stack.top = state->uts.ts64.__rsp;
+      thread->stack.frame = state->uts.ts64.__rbp;
+      thread->stack.bottom = 0x7fff5fc00000LL;
+    } else {
+      thread->regs.count = 16;
+      thread->regs.values[0] = state->uts.ts32.__eax;
+      thread->regs.values[1] = state->uts.ts32.__ebx;
+      thread->regs.values[2] = state->uts.ts32.__ecx;
+      thread->regs.values[3] = state->uts.ts32.__edx;
+      thread->regs.values[4] = state->uts.ts32.__edi;
+      thread->regs.values[5] = state->uts.ts32.__esi;
+      thread->regs.values[6] = state->uts.ts32.__ebp;
+      thread->regs.values[7] = state->uts.ts32.__esp;
+      thread->regs.values[8] = state->uts.ts32.__ss;
+      thread->regs.values[9] = state->uts.ts32.__eflags;
+      thread->regs.values[10] = state->uts.ts32.__eip;
+      thread->regs.values[11] = state->uts.ts32.__cs;
+      thread->regs.values[12] = state->uts.ts32.__ds;
+      thread->regs.values[13] = state->uts.ts32.__es;
+      thread->regs.values[14] = state->uts.ts32.__fs;
+      thread->regs.values[15] = state->uts.ts32.__gs;
+
+      thread->regs.ip = state->uts.ts32.__eip;
+      thread->stack.top = state->uts.ts32.__esp;
+      thread->stack.frame = state->uts.ts32.__ebp;
+      thread->stack.bottom = 0xc0000000;
+    }
+
+    return cd_error(kCDErrSkip);
+  }
+
+  return cd_ok();
 }
 
 
@@ -473,112 +646,25 @@ cd_error_t cd_mach_obj_get_thread(cd_mach_obj_t* obj,
                                   unsigned int index,
                                   cd_obj_thread_t* thread) {
   cd_error_t err;
+  cd_mach_get_thread_t state;
 
-  if (!cd_mach_obj_is_core(obj)) {
-    err = cd_error_num(kCDErrNotCore, obj->header->filetype);
-    goto fatal;
-  }
+  if (!cd_mach_obj_is_core(obj))
+    return cd_error_num(kCDErrNotCore, obj->header->filetype);
 
-  CD_ITERATE_LCMDS(obj->header, obj->size, {
-    char* ptr;
-    size_t size;
-    char* end;
+  state.index = index;
+  state.thread = thread;
 
-    if (cmd->cmd != LC_THREAD)
-      continue;
+  err = cd_mach_obj_iterate_lcmds(obj,
+                                  obj->header,
+                                  obj->size,
+                                  cd_mach_get_thread_lcmd_cb,
+                                  &state);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+  else if (!cd_is_ok(err))
+    return err;
 
-    end = (char*) cmd + cmd->cmdsize;
-    for (ptr = (char*) cmd + 8; ptr < end; ptr += size) {
-      uint32_t flavor;
-      uint32_t count;
-      struct x86_thread_state* state;
-
-      flavor = *((uint32_t*) ptr);
-      count = *((uint32_t*) ptr + 1);
-      size = 8 + 4 * count;
-
-      /* Thread state is too big */
-      if (ptr + size > end) {
-        err = cd_error(kCDErrThreadStateOOB);
-        goto fatal;
-      }
-
-      if (flavor != x86_THREAD_STATE)
-        continue;
-
-      if (count != x86_THREAD_STATE_COUNT) {
-        err = cd_error(kCDErrThreadStateInvalidSize);
-        goto fatal;
-      }
-
-      /* We are looking for different index */
-      if (index != 0) {
-        index--;
-        continue;
-      }
-
-      state = (struct x86_thread_state*) (ptr + 8);
-      if (obj->is_x64) {
-        thread->regs.count = 21;
-        thread->regs.values[0] = state->uts.ts64.__rax;
-        thread->regs.values[1] = state->uts.ts64.__rbx;
-        thread->regs.values[2] = state->uts.ts64.__rcx;
-        thread->regs.values[3] = state->uts.ts64.__rdx;
-        thread->regs.values[4] = state->uts.ts64.__rdi;
-        thread->regs.values[5] = state->uts.ts64.__rsi;
-        thread->regs.values[6] = state->uts.ts64.__rbp;
-        thread->regs.values[7] = state->uts.ts64.__rsp;
-        thread->regs.values[8] = state->uts.ts64.__r8;
-        thread->regs.values[9] = state->uts.ts64.__r9;
-        thread->regs.values[10] = state->uts.ts64.__r10;
-        thread->regs.values[11] = state->uts.ts64.__r11;
-        thread->regs.values[12] = state->uts.ts64.__r12;
-        thread->regs.values[13] = state->uts.ts64.__r13;
-        thread->regs.values[14] = state->uts.ts64.__r14;
-        thread->regs.values[15] = state->uts.ts64.__r15;
-        thread->regs.values[16] = state->uts.ts64.__rip;
-        thread->regs.values[17] = state->uts.ts64.__rflags;
-        thread->regs.values[18] = state->uts.ts64.__cs;
-        thread->regs.values[19] = state->uts.ts64.__fs;
-        thread->regs.values[20] = state->uts.ts64.__gs;
-
-        thread->regs.ip = state->uts.ts64.__rip;
-        thread->stack.top = state->uts.ts64.__rsp;
-        thread->stack.frame = state->uts.ts64.__rbp;
-        thread->stack.bottom = 0x7fff5fc00000LL;
-      } else {
-        thread->regs.count = 16;
-        thread->regs.values[0] = state->uts.ts32.__eax;
-        thread->regs.values[1] = state->uts.ts32.__ebx;
-        thread->regs.values[2] = state->uts.ts32.__ecx;
-        thread->regs.values[3] = state->uts.ts32.__edx;
-        thread->regs.values[4] = state->uts.ts32.__edi;
-        thread->regs.values[5] = state->uts.ts32.__esi;
-        thread->regs.values[6] = state->uts.ts32.__ebp;
-        thread->regs.values[7] = state->uts.ts32.__esp;
-        thread->regs.values[8] = state->uts.ts32.__ss;
-        thread->regs.values[9] = state->uts.ts32.__eflags;
-        thread->regs.values[10] = state->uts.ts32.__eip;
-        thread->regs.values[11] = state->uts.ts32.__cs;
-        thread->regs.values[12] = state->uts.ts32.__ds;
-        thread->regs.values[13] = state->uts.ts32.__es;
-        thread->regs.values[14] = state->uts.ts32.__fs;
-        thread->regs.values[15] = state->uts.ts32.__gs;
-
-        thread->regs.ip = state->uts.ts32.__eip;
-        thread->stack.top = state->uts.ts32.__esp;
-        thread->stack.frame = state->uts.ts32.__ebp;
-        thread->stack.bottom = 0xc0000000;
-      }
-
-      return cd_ok();
-    }
-  });
-
-  err = cd_error(kCDErrNotFound);
-
-fatal:
-  return err;
+  return cd_error(kCDErrNotFound);
 }
 
 
@@ -609,6 +695,21 @@ cd_error_t cd_mach_obj_locate_seg_cb(cd_mach_obj_t* obj, cd_segment_t* seg) {
 }
 
 
+cd_error_t cd_mach_obj_locate_iterate(cd_mach_obj_t* obj,
+                                      struct load_command* cmd,
+                                      void* arg) {
+  struct dylinker_command* dcmd;
+
+  if (cmd->cmd != LC_ID_DYLINKER)
+    return cd_ok();
+
+  dcmd = (struct dylinker_command*) cmd;
+  obj->dyld_path = (char*) dcmd + dcmd->name.offset;
+
+  return cd_error(kCDErrSkip);
+};
+
+
 cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
   cd_error_t err;
   cd_mach_opts_t opts;
@@ -622,23 +723,21 @@ cd_error_t cd_mach_obj_locate(cd_mach_obj_t* obj) {
       (cd_obj_iterate_seg_cb) cd_mach_obj_locate_seg_cb,
       NULL);
 
+  if (!cd_is_ok(err) && err.code != kCDErrSkip)
+    goto fatal;
+
   if (obj->dyld == NULL) {
     err = cd_error_str(kCDErrNotFound, "dylinker not found");
     goto fatal;
   }
 
-  if (err.code != kCDErrSkip)
+  err = cd_mach_obj_iterate_lcmds(obj,
+                                  obj->dyld,
+                                  obj->dyld_size,
+                                  cd_mach_obj_locate_iterate,
+                                  NULL);
+  if (!cd_is_ok(err) && err.code != kCDErrSkip)
     goto fatal;
-
-  CD_ITERATE_LCMDS(obj->dyld, obj->dyld_size, {
-    struct dylinker_command* dcmd;
-
-    if (cmd->cmd != LC_ID_DYLINKER)
-      continue;
-
-    dcmd = (struct dylinker_command*) cmd;
-    obj->dyld_path = (char*) dcmd + dcmd->name.offset;
-  });
 
   if (obj->dyld_path == NULL) {
     err = cd_error_str(kCDErrNotFound, "dyld path not found");
@@ -780,6 +879,3 @@ cd_obj_method_t cd_mach_obj_method_def = {
 };
 
 cd_obj_method_t* cd_mach_obj_method = &cd_mach_obj_method_def;
-
-
-#undef CD_ITERATE_LCMDS
