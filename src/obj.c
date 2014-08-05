@@ -451,3 +451,9 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
 
   return cd_error(kCDErrOk);
 }
+
+
+cd_error_t cd_obj_add_dso(cd_obj_t* obj, cd_obj_t* dso) {
+  QUEUE_INSERT_TAIL(&obj->dso, &dso->member);
+  return cd_ok();
+}

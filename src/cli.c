@@ -20,6 +20,7 @@ typedef struct cd_argv_s cd_argv_t;
 
 struct cd_argv_s {
   const char* core;
+  const char* binary;
   const char* output;
   int trace;
 };
@@ -53,6 +54,7 @@ void cd_print_help(const char* name) {
               " --help, -h              Print this message\n"
               " --trace, -t             Print only a stack trace\n"
               " --core PATH, -c PATH    Specify core file (Required)\n"
+              " --binary PATH, -b PATH  Specify binary\n"
               " --output PATH, -o PATH  Specify output    (Default: stdout)\n",
           name);
 }
@@ -64,6 +66,7 @@ int main(int argc, char** argv) {
     { "help", 1, NULL, 'h' },
     { "core", 2, NULL, 'c' },
     { "output", 3, NULL, 'o' },
+    { "binary", 4, NULL, 'b' },
     { "trace", 5, NULL, 't' },
   };
   int c;
@@ -72,10 +75,11 @@ int main(int argc, char** argv) {
 
   cargv.core = NULL;
   cargv.output = NULL;
+  cargv.binary = NULL;
   cargv.trace = 0;
 
   do {
-    c = getopt_long(argc, argv, "hvtc:o:", long_options, NULL);
+    c = getopt_long(argc, argv, "hvtc:b:o:", long_options, NULL);
     switch (c) {
       case 'v':
         cd_print_version();
@@ -88,6 +92,9 @@ int main(int argc, char** argv) {
         break;
       case 'o':
         cargv.output = optarg;
+        break;
+      case 'b':
+        cargv.binary = optarg;
         break;
       case 't':
         cargv.trace = 1;
@@ -153,6 +160,20 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
     goto fatal;
 
   state.ptr_size = cd_obj_is_x64(state.core) ? 8 : 4;
+
+  if (argv->binary != NULL) {
+    cd_obj_t* binary;
+
+    binary = cd_obj_new(method, argv->binary, &err);
+    if (!cd_is_ok(err))
+      goto failed_cd_strings_init;
+
+    err = cd_obj_add_dso(state.core, binary);
+    if (!cd_is_ok(err)) {
+      cd_obj_free(binary);
+      goto failed_cd_strings_init;
+    }
+  }
 
   state.output = output;
 

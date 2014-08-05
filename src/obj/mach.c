@@ -760,8 +760,8 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     opts.parent = obj;
     opts.reloc = addr;
     image = cd_obj_new_ex(cd_mach_obj_method, cpath, &opts, &err);
-    if (!cd_is_ok(err))
-      return err;
+    /* Ignore errors */
+    /* TODO(indutny): print warnings? */
   }
 
   return cd_ok();

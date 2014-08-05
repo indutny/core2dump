@@ -22,6 +22,7 @@ cd_obj_t* cd_obj_new(struct cd_obj_method_s* method,
 void cd_obj_free(cd_obj_t* obj);
 int cd_obj_is_x64(cd_obj_t* obj);
 int cd_obj_is_core(cd_obj_t* obj);
+cd_error_t cd_obj_add_dso(cd_obj_t* obj, cd_obj_t* dso);
 
 cd_error_t cd_obj_get(cd_obj_t* obj, uint64_t addr, uint64_t size, void** res);
 cd_error_t cd_obj_get_sym(cd_obj_t* obj, const char* sym, uint64_t* addr);
