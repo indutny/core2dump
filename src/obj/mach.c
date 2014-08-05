@@ -190,7 +190,9 @@ cd_mach_obj_t* cd_mach_obj_new(int fd, cd_mach_opts_t* opts, cd_error_t* err) {
     if (!cd_is_ok(*err))
       goto failed_magic2;
 
-    QUEUE_INSERT_TAIL(&opts->parent->dso, &obj->member);
+    *err = cd_obj_add_dso((cd_obj_t*) opts->parent, (cd_obj_t*) obj);
+    if (!cd_is_ok(*err))
+      goto failed_magic2;
   }
 
   return obj;
