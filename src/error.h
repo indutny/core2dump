@@ -29,7 +29,8 @@ typedef enum cd_error_code_e cd_error_code_t;
     V(UnsupportedElements, 0x17)                                              \
     V(StackOOB, 0x18)                                                         \
     V(NotSMI, 0x19)                                                           \
-    V(Skip, 0x1a)                                                           \
+    V(Skip, 0x1a)                                                             \
+    V(DwarfOOB, 0x1b)                                                         \
 
 #define CD_ERROR_DECL(X, Y) kCDErr##X = Y,
 

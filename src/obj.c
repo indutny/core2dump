@@ -2,6 +2,7 @@
 #include "error.h"
 #include "obj.h"
 #include "obj-internal.h"
+#include "obj/dwarf.h"
 #include "queue.h"
 
 #include <assert.h>
@@ -31,6 +32,7 @@ static cd_error_t cd_obj_init_syms(cd_obj_t* obj);
 static cd_error_t cd_obj_insert_syms(cd_obj_t* obj,
                                      cd_sym_t* sym,
                                      void* arg);
+static cd_error_t cd_obj_init_dwarf(cd_obj_t* obj);
 
 
 /* Wrappers around method */
@@ -62,6 +64,8 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
   } else {
     close(fd);
   }
+
+  res->path = path;
 
   if (opts != NULL && opts->parent != NULL) {
     *err = cd_obj_add_dso(opts->parent, res);
@@ -101,6 +105,13 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
                                cd_obj_iterate_sym_cb cb,
                                void* arg) {
   return obj->method->obj_iterate_syms(obj, cb, arg);
+}
+
+
+cd_error_t cd_obj_get_dbg_frame(cd_obj_t* obj,
+                                void** res,
+                                uint64_t* size) {
+  return obj->method->obj_get_dbg_frame(obj, res, size);
 }
 
 
@@ -187,6 +198,28 @@ cd_error_t cd_obj_init_syms(cd_obj_t* obj) {
   return cd_obj_iterate_segs((cd_obj_t*) obj,
                              cd_obj_insert_seg_ends,
                              NULL);
+}
+
+
+cd_error_t cd_obj_init_dwarf(cd_obj_t* obj) {
+  cd_error_t err;
+  void* dbg;
+  uint64_t dbg_size;
+
+  if (obj->cfa != NULL)
+    return cd_ok();
+
+  err = cd_obj_get_dbg_frame(obj, &dbg, &dbg_size);
+  if (err.code == kCDErrNotFound)
+    return cd_ok();
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_dwarf_parse_cfa(obj, dbg, dbg_size, &obj->cfa);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_ok();
 }
 
 
@@ -330,6 +363,7 @@ cd_error_t cd_obj_internal_init(cd_obj_t* obj) {
   obj->segment_count = -1;
   obj->segments = NULL;
   obj->aslr = 0;
+  obj->cfa = NULL;
 
   return cd_ok();
 }
@@ -355,6 +389,10 @@ void cd_obj_internal_free(cd_obj_t* obj) {
 
     dso->method->obj_free(dso);
   }
+  if (obj->cfa != NULL) {
+    cd_dwarf_free_cfa(obj->cfa);
+    obj->cfa = NULL;
+  }
 
   close(obj->fd);
   obj->fd = -1;
@@ -367,13 +405,18 @@ void cd_obj_internal_free(cd_obj_t* obj) {
 cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
                             uint64_t addr,
                             const char** sym,
-                            int* sym_len) {
+                            int* sym_len,
+                            cd_dwarf_fde_t* fde) {
   cd_error_t err;
   cd_sym_t idx;
   cd_sym_t* r;
   QUEUE* q;
 
   err = cd_obj_init_syms(obj);
+  if (!cd_is_ok(err))
+    return err;
+
+  err = cd_obj_init_dwarf(obj);
   if (!cd_is_ok(err))
     return err;
 
@@ -396,7 +439,7 @@ not_found:
     cd_obj_t* dso;
 
     dso = container_of(q, cd_obj_t, member);
-    err = cd_obj_lookup_ip(dso, addr, sym, sym_len);
+    err = cd_obj_lookup_ip(dso, addr, sym, sym_len, fde);
     if (cd_is_ok(err) || err.code != kCDErrNotFound)
       return err;
   }

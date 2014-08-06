@@ -74,7 +74,8 @@ cd_error_t cd_collect_frame(cd_obj_t* obj, cd_frame_t* sframe, void* arg) {
   err = cd_obj_lookup_ip(state->core,
                          frame->ip,
                          &frame->name,
-                         &frame->name_len);
+                         &frame->name_len,
+                         NULL);
   if (cd_is_ok(err))
     goto done;
 

@@ -9,6 +9,7 @@
       "src/cli.c",
       "src/error.c",
       "src/obj.c",
+      "src/obj/dwarf.c",
       "src/strings.c",
       "src/v8constants.c",
       "src/v8helpers.c",

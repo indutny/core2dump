@@ -392,7 +392,7 @@ cd_error_t cd_mach_iterate_segs_lcmd_cb(cd_mach_obj_t* obj,
   seg.end = vmaddr + vmsize;
   seg.fileoff = fileoff;
   seg.sects = sects;
-  seg.ptr = (char*) obj->addr + fileoff;
+  seg.ptr = (char*) obj->header + fileoff;
 
   return st->cb((cd_obj_t*) obj, &seg, st->arg);
 }
@@ -852,9 +852,119 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     image = cd_obj_new_ex(cd_mach_obj_method, cpath, &opts, &err);
     /* Ignore errors */
     /* TODO(indutny): print warnings? */
+
+    if (image != NULL && off == 0) {
+      void* ptr;
+      uint64_t ptrsz;
+
+      err = cd_obj_get_dbg_frame((cd_obj_t*) image, &ptr, &ptrsz);
+    }
   }
 
   return cd_ok();
+}
+
+
+typedef struct cd_mach_obj_get_dbg_s cd_mach_obj_get_dbg_t;
+
+struct cd_mach_obj_get_dbg_s {
+  void** res;
+  uint64_t* size;
+};
+
+
+cd_error_t cd_mach_iterate_dbg_lcmd_cb(cd_mach_obj_t* obj,
+                                       struct load_command* cmd,
+                                       void* arg) {
+  cd_mach_obj_get_dbg_t* st;
+  struct segment_command_64* seg;
+  struct segment_command_64 seg_st;
+  struct section_64* sect64;
+  struct section* sect32;
+  uint32_t i;
+
+  st = (cd_mach_obj_get_dbg_t*) arg;
+  if (cmd->cmd == LC_SEGMENT) {
+    struct segment_command* seg32;
+
+    seg32 = (struct segment_command*) cmd;
+    seg = &seg_st;
+
+    seg->cmd = seg32->cmd;
+    seg->cmdsize = seg32->cmdsize;
+    memcpy(seg->segname, seg32->segname, sizeof(seg32->segname));
+    seg->vmaddr = seg32->vmaddr;
+    seg->vmsize = seg32->vmsize;
+    seg->fileoff = seg32->fileoff;
+    seg->filesize = seg32->filesize;
+    seg->maxprot = seg32->maxprot;
+    seg->initprot = seg32->initprot;
+    seg->nsects = seg32->nsects;
+    seg->flags = seg32->flags;
+
+    sect32 = (struct section*) ((char*) cmd + sizeof(*seg32));
+  } else if (cmd->cmd == LC_SEGMENT_64) {
+    seg = (struct segment_command_64*) cmd;
+
+    sect64 = (struct section_64*) ((char*) cmd + sizeof(*seg));
+  } else {
+    return cd_ok();
+  }
+
+  if (strcmp(seg->segname, "__TEXT") != 0)
+    return cd_ok();
+
+  for (i = 0; i < seg->nsects; i++, sect64++, sect32++) {
+    struct section_64* sect;
+    struct section_64 sect_st;
+
+    if (obj->is_x64) {
+      sect = sect64;
+    } else {
+      sect = &sect_st;
+
+      memcpy(sect->sectname, sect32->sectname, sizeof(sect32->sectname));
+      memcpy(sect->segname, sect32->segname, sizeof(sect32->segname));
+
+      sect->addr = sect32->addr;
+      sect->size = sect32->size;
+      sect->offset = sect32->offset;
+      sect->align = sect32->align;
+      sect->reloff = sect32->reloff;
+      sect->nreloc = sect32->nreloc;
+      sect->flags = sect32->flags;
+    }
+
+    if (strcmp(sect->sectname, "__eh_frame") != 0)
+      continue;
+
+    *st->res = (char*) obj->header + sect->offset;
+    *st->size = sect->size;
+    return cd_error(kCDErrSkip);
+  }
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_mach_obj_get_dbg(cd_mach_obj_t* obj, void** res, uint64_t* size) {
+  cd_error_t err;
+  cd_mach_obj_get_dbg_t state;
+
+  state.res = res;
+  state.size = size;
+
+  err = cd_mach_obj_iterate_lcmds(obj,
+                                  obj->header,
+                                  obj->size,
+                                  cd_mach_iterate_dbg_lcmd_cb,
+                                  &state);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_error_str(kCDErrNotFound, "__eh_frame not found");
 }
 
 
@@ -864,7 +974,8 @@ cd_obj_method_t cd_mach_obj_method_def = {
   .obj_is_core = (cd_obj_method_is_core_t) cd_mach_obj_is_core,
   .obj_get_thread = (cd_obj_method_get_thread_t) cd_mach_obj_get_thread,
   .obj_iterate_syms = (cd_obj_method_iterate_syms_t) cd_mach_obj_iterate_syms,
-  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_mach_obj_iterate_segs
+  .obj_iterate_segs = (cd_obj_method_iterate_segs_t) cd_mach_obj_iterate_segs,
+  .obj_get_dbg_frame = (cd_obj_method_get_dbg_frame_t) cd_mach_obj_get_dbg
 };
 
 cd_obj_method_t* cd_mach_obj_method = &cd_mach_obj_method_def;

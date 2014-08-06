@@ -10,6 +10,7 @@
 
 /* Forward declarations */
 struct cd_obj_s;
+struct cd_dwarf_cfa_s;
 
 typedef struct cd_obj_method_s cd_obj_method_t;
 typedef struct cd_segment_s cd_segment_t;
@@ -38,10 +39,14 @@ typedef cd_error_t (*cd_obj_method_iterate_syms_t)(struct cd_obj_s* obj,
 typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
                                                    cd_obj_iterate_seg_cb cb,
                                                    void* arg);
+typedef cd_error_t (*cd_obj_method_get_dbg_frame_t)(struct cd_obj_s* obj,
+                                                    void** res,
+                                                    uint64_t* size);
 
 #define CD_OBJ_INTERNAL_FIELDS                                                \
     QUEUE member;                                                             \
     struct cd_obj_method_s* method;                                           \
+    const char* path;                                                         \
     int fd;                                                                   \
     void* addr;                                                               \
     size_t size;                                                              \
@@ -54,6 +59,7 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
     cd_splay_t seg_splay;                                                     \
     QUEUE dso;                                                                \
     int64_t aslr;                                                             \
+    struct cd_dwarf_cfa_s* cfa;                                               \
 
 struct cd_obj_method_s {
   cd_obj_method_new_t obj_new;
@@ -62,6 +68,7 @@ struct cd_obj_method_s {
   cd_obj_method_get_thread_t obj_get_thread;
   cd_obj_method_iterate_syms_t obj_iterate_syms;
   cd_obj_method_iterate_segs_t obj_iterate_segs;
+  cd_obj_method_get_dbg_frame_t obj_get_dbg_frame;
 };
 
 struct cd_segment_s {
@@ -100,6 +107,9 @@ cd_error_t cd_obj_iterate_syms(struct cd_obj_s* obj,
 cd_error_t cd_obj_iterate_segs(struct cd_obj_s* obj,
                                cd_obj_iterate_seg_cb cb,
                                void* arg);
+cd_error_t cd_obj_get_dbg_frame(struct cd_obj_s* obj,
+                                void** res,
+                                uint64_t* size);
 
 /* Internal, mostly */
 cd_error_t cd_obj_init_segments(struct cd_obj_s* obj);
