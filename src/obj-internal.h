@@ -41,7 +41,8 @@ typedef cd_error_t (*cd_obj_method_iterate_segs_t)(struct cd_obj_s* obj,
                                                    void* arg);
 typedef cd_error_t (*cd_obj_method_get_dbg_frame_t)(struct cd_obj_s* obj,
                                                     void** res,
-                                                    uint64_t* size);
+                                                    uint64_t* size,
+                                                    uint64_t* vmaddr);
 
 #define CD_OBJ_INTERNAL_FIELDS                                                \
     QUEUE member;                                                             \
@@ -109,7 +110,8 @@ cd_error_t cd_obj_iterate_segs(struct cd_obj_s* obj,
                                void* arg);
 cd_error_t cd_obj_get_dbg_frame(struct cd_obj_s* obj,
                                 void** res,
-                                uint64_t* size);
+                                uint64_t* size,
+                                uint64_t* vmaddr);
 
 /* Internal, mostly */
 cd_error_t cd_obj_init_segments(struct cd_obj_s* obj);

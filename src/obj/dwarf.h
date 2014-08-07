@@ -3,6 +3,7 @@
 
 #include "error.h"
 #include "queue.h"
+#include "common.h"
 
 #include <stdint.h>
 
@@ -18,6 +19,10 @@ struct cd_dwarf_cfa_s {
   QUEUE cies;
 
   struct cd_obj_s* obj;
+  char* start;
+  uint64_t sect_addr;
+
+  cd_splay_t fde_splay;
 };
 
 struct cd_dwarf_cie_s {
@@ -79,6 +84,7 @@ enum cd_dwarf_enc_e {
 
 
 cd_error_t cd_dwarf_parse_cfa(struct cd_obj_s* obj,
+                              uint64_t sect_addr,
                               void* data,
                               uint64_t size,
                               cd_dwarf_cfa_t** res);

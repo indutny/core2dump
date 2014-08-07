@@ -110,8 +110,9 @@ cd_error_t cd_obj_iterate_syms(cd_obj_t* obj,
 
 cd_error_t cd_obj_get_dbg_frame(cd_obj_t* obj,
                                 void** res,
-                                uint64_t* size) {
-  return obj->method->obj_get_dbg_frame(obj, res, size);
+                                uint64_t* size,
+                                uint64_t* vmaddr) {
+  return obj->method->obj_get_dbg_frame(obj, res, size, vmaddr);
 }
 
 
@@ -204,18 +205,19 @@ cd_error_t cd_obj_init_syms(cd_obj_t* obj) {
 cd_error_t cd_obj_init_dwarf(cd_obj_t* obj) {
   cd_error_t err;
   void* dbg;
+  uint64_t dbg_vmaddr;
   uint64_t dbg_size;
 
   if (obj->cfa != NULL)
     return cd_ok();
 
-  err = cd_obj_get_dbg_frame(obj, &dbg, &dbg_size);
+  err = cd_obj_get_dbg_frame(obj, &dbg, &dbg_size, &dbg_vmaddr);
   if (err.code == kCDErrNotFound)
     return cd_ok();
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_dwarf_parse_cfa(obj, dbg, dbg_size, &obj->cfa);
+  err = cd_dwarf_parse_cfa(obj, dbg_vmaddr, dbg, dbg_size, &obj->cfa);
   if (!cd_is_ok(err))
     return err;
 

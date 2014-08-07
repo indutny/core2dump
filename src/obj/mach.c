@@ -852,13 +852,6 @@ cd_error_t cd_mach_obj_locate_final(cd_mach_obj_t* obj) {
     image = cd_obj_new_ex(cd_mach_obj_method, cpath, &opts, &err);
     /* Ignore errors */
     /* TODO(indutny): print warnings? */
-
-    if (image != NULL && off == 0) {
-      void* ptr;
-      uint64_t ptrsz;
-
-      err = cd_obj_get_dbg_frame((cd_obj_t*) image, &ptr, &ptrsz);
-    }
   }
 
   return cd_ok();
@@ -870,6 +863,7 @@ typedef struct cd_mach_obj_get_dbg_s cd_mach_obj_get_dbg_t;
 struct cd_mach_obj_get_dbg_s {
   void** res;
   uint64_t* size;
+  uint64_t* vmaddr;
 };
 
 
@@ -940,6 +934,7 @@ cd_error_t cd_mach_iterate_dbg_lcmd_cb(cd_mach_obj_t* obj,
 
     *st->res = (char*) obj->header + sect->offset;
     *st->size = sect->size;
+    *st->vmaddr = sect->addr;
     return cd_error(kCDErrSkip);
   }
 
@@ -947,12 +942,16 @@ cd_error_t cd_mach_iterate_dbg_lcmd_cb(cd_mach_obj_t* obj,
 }
 
 
-cd_error_t cd_mach_obj_get_dbg(cd_mach_obj_t* obj, void** res, uint64_t* size) {
+cd_error_t cd_mach_obj_get_dbg(cd_mach_obj_t* obj,
+                               void** res,
+                               uint64_t* size,
+                               uint64_t* vmaddr) {
   cd_error_t err;
   cd_mach_obj_get_dbg_t state;
 
   state.res = res;
   state.size = size;
+  state.vmaddr = vmaddr;
 
   err = cd_mach_obj_iterate_lcmds(obj,
                                   obj->header,

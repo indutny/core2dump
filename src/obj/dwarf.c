@@ -27,9 +27,11 @@ static cd_error_t cd_dwarf_read(char** data,
                                 uint8_t enc,
                                 int x64,
                                 uint64_t* res);
+static int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b);
 
 
 cd_error_t cd_dwarf_parse_cfa(cd_obj_t* obj,
+                              uint64_t sect_addr,
                               void* data,
                               uint64_t size,
                               cd_dwarf_cfa_t** res) {
@@ -41,8 +43,12 @@ cd_error_t cd_dwarf_parse_cfa(cd_obj_t* obj,
   if (cfa == NULL)
     return cd_error_str(kCDErrNoMem, "cd_dwarf_cfa_t");
 
-  cfa->obj = obj;
   QUEUE_INIT(&cfa->cies);
+  cfa->obj = obj;
+  cfa->start = (char*) data;
+  cfa->sect_addr = sect_addr;
+
+  cd_splay_init(&cfa->fde_splay, (cd_splay_sort_cb) cd_dwarf_sort_fde);
 
   /* Parse CIEs one-by-one */
   end = (char*) data + size;
@@ -369,6 +375,7 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
   cd_dwarf_fde_t* fde;
   char* end;
   int x64;
+  uint64_t ip;
 
   fde = malloc(sizeof(*fde));
   if (fde == NULL)
@@ -409,6 +416,7 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
     goto fatal;
   }
 
+  ip = fde->cie->cfa->sect_addr + (*data - fde->cie->cfa->start);
   err = cd_dwarf_read(data,
                       end - *data,
                       cie->fde_enc,
@@ -423,6 +431,26 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
                       &fde->range);
   if (!cd_is_ok(err))
     goto fatal;
+
+  if ((cie->fde_enc & kCDDwarfEncAppMask) == kCDDwarfEncPCrel) {
+    switch ((cie->fde_enc & kCDDwarfEncEncodeMask)) {
+      case kCDDwarfEncULeb128:
+      case kCDDwarfEncUData2:
+      case kCDDwarfEncUData4:
+      case kCDDwarfEncUData8:
+        fde->init_loc += ip;
+        break;
+      case kCDDwarfEncSLeb128:
+      case kCDDwarfEncSData2:
+      case kCDDwarfEncSData4:
+      case kCDDwarfEncSData8:
+      case kCDDwarfEncAbsPtr:
+        fde->init_loc = ip + (int64_t) fde->init_loc;
+        break;
+      default:
+        break;
+    }
+  }
 
   if (cie->augment[0] == 'z') {
     err = cd_dwarf_leb128(data, end - *data, &fde->aug_len);
@@ -442,10 +470,20 @@ cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie, char** data, uint64_t size) {
   /* Skip the rest */
   *data = end;
 
+  if (cd_splay_insert(&fde->cie->cfa->fde_splay, fde) != 0) {
+    err = cd_error_str(kCDErrNoMem, "fde_splay insert");
+    goto fatal;
+  }
+
   QUEUE_INSERT_TAIL(&cie->fdes, &fde->member);
   return cd_ok();
 
 fatal:
   cd_dwarf_free_fde(fde);
   return err;
+}
+
+
+int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b) {
+  return a->init_loc > b->init_loc ? 1 : a->init_loc < b->init_loc ? -1 : 0;
 }
