@@ -11,14 +11,17 @@
 
 static void cd_dwarf_free_cie(cd_dwarf_cie_t* fde);
 static void cd_dwarf_free_fde(cd_dwarf_fde_t* fde);
+static cd_error_t cd_dwarf_parse_cie_aug(cd_dwarf_cie_t* cie,
+                                         char** data,
+                                         uint64_t size);
 static cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
                                      char** data,
                                      uint64_t size);
 static cd_error_t cd_dwarf_parse_fde(cd_dwarf_cie_t* cie,
                                      char** data,
                                      uint64_t size);
-static cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint16_t* res);
-static cd_error_t cd_dwarf_sleb128(char** data, uint64_t size, int16_t* res);
+static cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint64_t* res);
+static cd_error_t cd_dwarf_sleb128(char** data, uint64_t size, int64_t* res);
 static cd_error_t cd_dwarf_read(char** data,
                                 uint64_t size,
                                 uint8_t enc,
@@ -93,7 +96,7 @@ void cd_dwarf_free_fde(cd_dwarf_fde_t* fde) {
 }
 
 
-cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint16_t* res) {
+cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint64_t* res) {
   uint8_t fb;
   uint8_t sb;
 
@@ -119,7 +122,7 @@ cd_error_t cd_dwarf_leb128(char** data, uint64_t size, uint16_t* res) {
 }
 
 
-cd_error_t cd_dwarf_sleb128(char** data, uint64_t size, int16_t* res) {
+cd_error_t cd_dwarf_sleb128(char** data, uint64_t size, int64_t* res) {
   uint8_t fb;
   uint8_t sb;
 
@@ -156,8 +159,8 @@ cd_error_t cd_dwarf_read(char** data,
                          uint8_t enc,
                          int x64,
                          uint64_t* res) {
-  switch (enc & kCDDwarfEncodeMask) {
-    case kCDDwarfAbsPtr:
+  switch (enc & kCDDwarfEncEncodeMask) {
+    case kCDDwarfEncAbsPtr:
       if (x64) {
         if (size < 8)
           return cd_error_str(kCDErrDwarfOOB, "dwarf_read x64 ptr");
@@ -170,9 +173,97 @@ cd_error_t cd_dwarf_read(char** data,
         (*data) += 4;
       }
       break;
+    case kCDDwarfEncULeb128:
+      return cd_dwarf_leb128(data, size, res);
+    case kCDDwarfEncSLeb128:
+      return cd_dwarf_sleb128(data, size, (int64_t*) res);
+
+    /* XXX Bounds checks */
+    case kCDDwarfEncUData2:
+      *res = *(uint16_t*) *data;
+      (*data) += 2;
+      break;
+    case kCDDwarfEncSData2:
+      *res = *(int16_t*) *data;
+      (*data) += 2;
+      break;
+    case kCDDwarfEncUData4:
+      *res = *(uint32_t*) *data;
+      (*data) += 4;
+      break;
+    case kCDDwarfEncSData4:
+      *res = *(int32_t*) *data;
+      (*data) += 4;
+      break;
+    case kCDDwarfEncUData8:
+      *res = *(uint64_t*) *data;
+      (*data) += 8;
+      break;
+    case kCDDwarfEncSData8:
+      *res = *(int64_t*) *data;
+      (*data) += 8;
+      break;
     default:
       abort();
   }
+  return cd_ok();
+}
+
+
+cd_error_t cd_dwarf_parse_cie_aug(cd_dwarf_cie_t* cie,
+                                  char** data,
+                                  uint64_t size) {
+  cd_error_t err;
+  char* end;
+  const char* ptr;
+  char* val;
+
+  end = *data + size;
+
+  cie->fde_enc = 0;
+  if (cie->augment[0] != 'z') {
+    cie->aug_len = 0;
+    cie->aug_data = NULL;
+    return cd_ok();
+  }
+
+  err = cd_dwarf_leb128(data, end - *data, &cie->aug_len);
+  if (!cd_is_ok(err))
+    return err;
+
+  cie->aug_data = *data;
+  val = *data;
+  (*data) += cie->aug_len;
+  end = *data;
+
+  /* XXX Bounds checks! */
+  ptr = cie->augment + 1;
+  for (; *ptr != '\0'; ptr++) {
+    uint8_t enc;
+    uint64_t tmp;
+
+    switch (*ptr) {
+      case 'L':
+        val++;
+        break;
+      case 'P':
+        enc =  *(uint8_t*) val++;
+        err = cd_dwarf_read(&val,
+                            end - val,
+                            enc,
+                            cie->cfa->obj->is_x64,
+                            &tmp);
+        if (!cd_is_ok(err))
+          return err;
+        break;
+      case 'R':
+        cie->fde_enc = *(uint8_t*) val++;
+        break;
+      default:
+        return cd_error_str(kCDErrDwarfInvalidAugment, cie->augment);
+    }
+  }
+
   return cd_ok();
 }
 
@@ -241,29 +332,9 @@ cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
   if (!cd_is_ok(err))
     goto fatal;
 
-  cie->fde_enc = 0;
-  if (cie->augment[0] == 'z') {
-    char* pos;
-
-    err = cd_dwarf_leb128(data, end - *data, &cie->aug_len);
-    if (!cd_is_ok(err))
-      goto fatal;
-
-    cie->aug_data = *data;
-    (*data) += cie->aug_len;
-
-    pos = strchr(cie->augment, 'R');
-    if (pos != NULL) {
-      int off;
-
-      off = pos - cie->augment - 1;
-      if (off < cie->aug_len)
-        cie->fde_enc = cie->aug_data[off];
-    }
-  } else {
-    cie->aug_len = 0;
-    cie->aug_data = NULL;
-  }
+  err = cd_dwarf_parse_cie_aug(cie, data, end - *data);
+  if (!cd_is_ok(err))
+    goto fatal;
 
   /* Skip the rest */
   *data = end;
