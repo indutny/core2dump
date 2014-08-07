@@ -487,3 +487,27 @@ fatal:
 int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b) {
   return a->init_loc > b->init_loc ? 1 : a->init_loc < b->init_loc ? -1 : 0;
 }
+
+
+cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
+                            uint64_t addr,
+                            cd_dwarf_fde_t** res) {
+  cd_dwarf_fde_t idx;
+
+  idx.init_loc = addr;
+  *res = cd_splay_find(&cfa->fde_splay, &idx);
+  if (*res == NULL)
+    return cd_error_str(kCDErrNotFound, "cd_dwarf_fde_t in splay");
+
+  return cd_ok();
+}
+
+
+cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
+                            char* stack,
+                            uint64_t stack_size,
+                            uint64_t* frame,
+                            uint64_t* ip) {
+  
+  return cd_ok();
+}

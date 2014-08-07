@@ -31,7 +31,7 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
                             uint64_t addr,
                             const char** sym,
                             int* sym_len,
-                            struct cd_dwarf_fde_s* fde);
+                            struct cd_dwarf_fde_s** fde);
 cd_error_t cd_obj_get_thread(cd_obj_t* obj,
                              unsigned int index,
                              cd_obj_thread_t* thread);

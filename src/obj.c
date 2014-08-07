@@ -408,7 +408,7 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
                             uint64_t addr,
                             const char** sym,
                             int* sym_len,
-                            cd_dwarf_fde_t* fde) {
+                            cd_dwarf_fde_t** fde) {
   cd_error_t err;
   cd_sym_t idx;
   cd_sym_t* r;
@@ -432,6 +432,26 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
 
   *sym = r->name;
   *sym_len = r->nlen;
+
+  /* Get FDE */
+  err = cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
+  if (err.code == kCDErrNotFound) {
+    *fde = NULL;
+    return cd_ok();
+  }
+
+  /* Check that FDE points to the same symbol */
+  idx.value = (*fde)->init_loc + obj->aslr;
+  r = cd_splay_find(&obj->sym_splay, &idx);
+  if (r == NULL || (r->name == NULL && r->nlen == 0)) {
+    *fde = NULL;
+    return cd_ok();
+  }
+
+  if (r->nlen != *sym_len || memcmp(*sym, r->name, r->nlen) != 0) {
+    *fde = NULL;
+    return cd_ok();
+  }
 
   return cd_ok();
 
@@ -474,32 +494,58 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  if (thread.stack.frame <= thread.stack.top)
-    return cd_error(kCDErrStackOOB);
-
   frame_start = thread.stack.frame - thread.stack.top;
   frame_end = 0;
   ip = thread.regs.ip;
-  while (frame_start < stack_size) {
+  while (frame_end < stack_size) {
     cd_frame_t frame;
+    cd_dwarf_fde_t* fde;
+
+    err = cd_obj_lookup_ip(obj, frame.ip, &frame.sym, &frame.sym_len, &fde);
+    if (err.code == kCDErrNotFound) {
+      frame.sym = NULL;
+      frame.sym_len = 0;
+      fde = NULL;
+    } else if (!cd_is_ok(err)) {
+      return err;
+    }
+
+    if (fde != NULL) {
+      err = cd_dwarf_fde_run(fde,
+                             stack + frame_end,
+                             stack_size - frame_end,
+                             &frame_start,
+                             &ip);
+      if (!cd_is_ok(err))
+        return err;
+
+      /* Relocate value */
+      frame_start -= thread.stack.top;
+    }
+
+    if (frame_start < frame_end ||
+        frame_start <= thread.stack.top ||
+        frame_start >= stack_size) {
+      return cd_error(kCDErrStackOOB);
+    }
 
     frame.start = stack + frame_start;
     frame.stop = stack + frame_end;
     frame.ip = ip;
+
     err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))
       return err;
 
     /* Next frame */
-    ip = *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
     frame_end = frame_start;
-    frame_start = *(uint64_t*) (stack + frame_start);
-    if (frame_start <= thread.stack.top)
-      break;
+    if (fde == NULL) {
+      ip = *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
+      frame_start = *(uint64_t*) (stack + frame_start);
 
-    frame_start -= thread.stack.top;
-    if (frame_start >= stack_size)
-      break;
+      /* Relocate value */
+      frame_start -= thread.stack.top;
+    }
   }
 
   return cd_error(kCDErrOk);

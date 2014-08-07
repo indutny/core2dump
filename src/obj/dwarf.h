@@ -82,6 +82,41 @@ enum cd_dwarf_enc_e {
   kCDDwarfEncIndirect = 0x80
 };
 
+enum cd_dwarf_cfa_instr_e {
+  kCDDwarfCFAHighMask = 0xc0,
+  kCDDwarfCFALowMask = 0x3f,
+
+  kCDDwarfCFAAdvanceLoc = 0x40,
+  kCDDwarfCFAOffset = 0x80,
+  kCDDwarfCFARestore = 0xc0,
+
+  kCDDwarfCFANop = 0x00,
+  kCDDwarfCFASetLoc = 0x01,
+  kCDDwarfCFAAdvanceLoc1 = 0x02,
+  kCDDwarfCFAAdvanceLoc2 = 0x03,
+  kCDDwarfCFAAdvanceLoc4 = 0x04,
+  kCDDwarfCFAOffsetExtended = 0x05,
+  kCDDwarfCFARestoreExtended = 0x06,
+  kCDDwarfCFAUndefined = 0x07,
+  kCDDwarfCFASameValue = 0x08,
+  kCDDwarfCFARegister = 0x09,
+  kCDDwarfCFARememberState = 0x0a,
+  kCDDwarfCFARestoreState = 0x0b,
+  kCDDwarfCFADefCFA = 0x0c,
+  kCDDwarfCFADefCFARegister = 0x0d,
+  kCDDwarfCFADefCFAOffset = 0x0e,
+  kCDDwarfCFADefCFAExpression = 0x0f,
+  kCDDwarfCFAExpression = 0x10,
+  kCDDwarfCFAOffsetExtendedSF = 0x11,
+  kCDDwarfCFADefCFASF = 0x12,
+  kCDDwarfCFADefCFAOffsetSF = 0x13,
+  kCDDwarfCFAValOffset = 0x14,
+  kCDDwarfCFAValOffsetSF = 0x15,
+  kCDDwarfCFAValExpression = 0x16,
+  kCDDwarfCFALoUser = 0x17,
+  kCDDwarfCFAHiUser = 0x3f
+};
+
 
 cd_error_t cd_dwarf_parse_cfa(struct cd_obj_s* obj,
                               uint64_t sect_addr,
@@ -89,6 +124,15 @@ cd_error_t cd_dwarf_parse_cfa(struct cd_obj_s* obj,
                               uint64_t size,
                               cd_dwarf_cfa_t** res);
 void cd_dwarf_free_cfa(cd_dwarf_cfa_t* cfa);
+
+cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
+                            uint64_t addr,
+                            cd_dwarf_fde_t** res);
+cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
+                            char* stack,
+                            uint64_t stack_size,
+                            uint64_t* frame,
+                            uint64_t* ip);
 
 
 #endif  /* SRC_OBJ_DWARF_H_ */

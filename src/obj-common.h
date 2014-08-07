@@ -32,6 +32,9 @@ struct cd_frame_s {
   char* start;
   char* stop;
   uint64_t ip;
+
+  const char* sym;
+  int sym_len;
 };
 
 #endif  /* SRC_OBJ_COMMON_H_ */
