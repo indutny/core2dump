@@ -434,17 +434,8 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
-  if (err.code == kCDErrNotFound) {
-    *fde = NULL;
-    return cd_ok();
-  }
-
-  /* Check that FDE covers the symbol */
-  if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
-    *fde = NULL;
-    return cd_ok();
-  }
+  *fde = NULL;
+  cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
 
   return cd_ok();
 

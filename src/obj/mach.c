@@ -471,10 +471,6 @@ cd_error_t cd_mach_iterate_syms_lcmd_cb(cd_mach_obj_t* obj,
       type = nl[i].n_type;
     }
 
-    /* Only external/global symbols are allowed */
-    if ((type & N_EXT) == 0)
-      continue;
-
     if (obj->is_x64)
       value = nl64[i].n_value;
     else
