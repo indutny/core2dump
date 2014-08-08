@@ -418,10 +418,6 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
-  err = cd_obj_init_dwarf(obj);
-  if (!cd_is_ok(err))
-    return err;
-
   idx.value = addr;
   r = cd_splay_find(&obj->sym_splay, &idx);
   if (r == NULL)
@@ -434,21 +430,18 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   *sym_len = r->nlen;
 
   /* Get FDE */
+  err = cd_obj_init_dwarf(obj);
+  if (!cd_is_ok(err))
+    return err;
+
   err = cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
   if (err.code == kCDErrNotFound) {
     *fde = NULL;
     return cd_ok();
   }
 
-  /* Check that FDE points to the same symbol */
-  idx.value = (*fde)->init_loc + obj->aslr;
-  r = cd_splay_find(&obj->sym_splay, &idx);
-  if (r == NULL || (r->name == NULL && r->nlen == 0)) {
-    *fde = NULL;
-    return cd_ok();
-  }
-
-  if (r->nlen != *sym_len || memcmp(*sym, r->name, r->nlen) != 0) {
+  /* Check that FDE covers the symbol */
+  if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
     *fde = NULL;
     return cd_ok();
   }
@@ -510,8 +503,12 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
       return err;
     }
 
-    if (fde != NULL) {
+    frame.ip = ip;
+    frame.stop = stack + frame_end;
+
+    if (0 && fde != NULL) {
       err = cd_dwarf_fde_run(fde,
+                             ip,
                              stack + frame_end,
                              stack_size - frame_end,
                              &frame_start,
@@ -523,15 +520,10 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
       frame_start -= thread.stack.top;
     }
 
-    if (frame_start < frame_end ||
-        frame_start <= thread.stack.top ||
-        frame_start >= stack_size) {
+    if (frame_start < frame_end || frame_start >= stack_size)
       return cd_error(kCDErrStackOOB);
-    }
 
     frame.start = stack + frame_start;
-    frame.stop = stack + frame_end;
-    frame.ip = ip;
 
     err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))
@@ -554,5 +546,11 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
 
 cd_error_t cd_obj_add_dso(cd_obj_t* obj, cd_obj_t* dso) {
   QUEUE_INSERT_TAIL(&obj->dso, &dso->member);
+  return cd_ok();
+}
+
+
+cd_error_t cd_obj_prepend_dso(cd_obj_t* obj, cd_obj_t* dso) {
+  QUEUE_INSERT_HEAD(&obj->dso, &dso->member);
   return cd_ok();
 }

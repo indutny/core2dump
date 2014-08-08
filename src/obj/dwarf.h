@@ -56,7 +56,7 @@ struct cd_dwarf_fde_s {
   const char* aug_data;
 
   uint64_t instr_len;
-  const char* instrs;
+  char* instrs;
 };
 
 enum cd_dwarf_enc_e {
@@ -129,6 +129,7 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
                             uint64_t addr,
                             cd_dwarf_fde_t** res);
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
+                            uint64_t rip,
                             char* stack,
                             uint64_t stack_size,
                             uint64_t* frame,

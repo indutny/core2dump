@@ -168,7 +168,7 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
     if (!cd_is_ok(err))
       goto failed_cd_strings_init;
 
-    err = cd_obj_add_dso(state.core, binary);
+    err = cd_obj_prepend_dso(state.core, binary);
     if (!cd_is_ok(err)) {
       cd_obj_free(binary);
       goto failed_cd_strings_init;

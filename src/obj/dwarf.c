@@ -27,6 +27,14 @@ static cd_error_t cd_dwarf_read(char** data,
                                 uint8_t enc,
                                 int x64,
                                 uint64_t* res);
+cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
+                        char* instrs,
+                        uint64_t instr_len,
+                        uint64_t rip,
+                        char* stack,
+                        uint64_t stack_size,
+                        uint64_t* frame,
+                        uint64_t* ip);
 static int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b);
 
 
@@ -264,6 +272,8 @@ cd_error_t cd_dwarf_parse_cie_aug(cd_dwarf_cie_t* cie,
         break;
       case 'R':
         cie->fde_enc = *(uint8_t*) val++;
+        break;
+      case 'S':
         break;
       default:
         return cd_error_str(kCDErrDwarfInvalidAugment, cie->augment);
@@ -503,11 +513,127 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
 }
 
 
+cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
+                        char* instrs,
+                        uint64_t instr_len,
+                        uint64_t rip,
+                        char* stack,
+                        uint64_t stack_size,
+                        uint64_t* frame,
+                        uint64_t* ip) {
+  char* end;
+  char* ptr;
+  int x64;
+
+  ptr = instrs;
+  end = ptr + instr_len;
+  x64 = cfa->obj->is_x64;
+
+  while (ptr < end) {
+    cd_error_t err;
+
+    uint8_t opcode = *(uint8_t*) ptr++;
+    uint8_t hi = opcode & kCDDwarfCFAHighMask;
+    uint8_t lo = opcode & kCDDwarfCFALowMask;
+    uint64_t arg0;
+    uint64_t arg1;
+
+    if (hi != 0)
+      opcode = hi;
+    else
+      opcode = lo;
+
+    switch (opcode) {
+      /* Inline arg */
+      case kCDDwarfCFAOffset:
+      case kCDDwarfCFARestore:
+        arg0 = (uint64_t) lo;
+        break;
+      case kCDDwarfCFAAdvanceLoc:
+        arg0 = (uint64_t) lo;
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg1);
+        break;
+      /* No args */
+      case kCDDwarfCFANop:
+      case kCDDwarfCFARememberState:
+      case kCDDwarfCFARestoreState:
+        break;
+      /* Address */
+      case kCDDwarfCFASetLoc:
+        err = cd_dwarf_read(&ptr, end - ptr, kCDDwarfEncAbsPtr, x64, &arg0);
+        break;
+      case kCDDwarfCFAAdvanceLoc1:
+        if (ptr + 1 > end)
+          err = cd_error_str(kCDErrDwarfOOB, "advance_loc1");
+        else
+          arg0 = *(uint8_t*) ptr++;
+        break;
+      case kCDDwarfCFAAdvanceLoc2:
+        err = cd_dwarf_read(&ptr, end - ptr, kCDDwarfEncUData2, x64, &arg0);
+        break;
+      case kCDDwarfCFAAdvanceLoc4:
+        err = cd_dwarf_read(&ptr, end - ptr, kCDDwarfEncUData4, x64, &arg0);
+        break;
+      case kCDDwarfCFAOffsetExtended:
+      case kCDDwarfCFARegister:
+      case kCDDwarfCFADefCFA:
+      case kCDDwarfCFAValOffset:
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg0);
+        if (!cd_is_ok(err))
+          break;
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg1);
+        break;
+      case kCDDwarfCFARestoreExtended:
+      case kCDDwarfCFAUndefined:
+      case kCDDwarfCFASameValue:
+      case kCDDwarfCFADefCFARegister:
+      case kCDDwarfCFADefCFAOffset:
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg0);
+        break;
+      case kCDDwarfCFADefCFAExpression:
+        /* XXX Block?! */
+        break;
+      case kCDDwarfCFAExpression:
+      case kCDDwarfCFAValExpression:
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg0);
+        /* XXX arg1 - Block?! */
+        break;
+      case kCDDwarfCFAOffsetExtendedSF:
+      case kCDDwarfCFADefCFASF:
+      case kCDDwarfCFAValOffsetSF:
+        err = cd_dwarf_leb128(&ptr, end - ptr, &arg0);
+        if (!cd_is_ok(err))
+          break;
+        err = cd_dwarf_sleb128(&ptr, end - ptr, (int64_t*) &arg1);
+        break;
+        break;
+      case kCDDwarfCFADefCFAOffsetSF:
+        err = cd_dwarf_sleb128(&ptr, end - ptr, (int64_t*) &arg0);
+        break;
+      default:
+        err = cd_error_num(kCDErrDwarfInstruction, opcode);
+        break;
+    }
+    if (!cd_is_ok(err))
+      return err;
+  }
+
+  return cd_ok();
+}
+
+
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
+                            uint64_t rip,
                             char* stack,
                             uint64_t stack_size,
                             uint64_t* frame,
                             uint64_t* ip) {
-  
-  return cd_ok();
+  return cd_dwarf_run(fde->cie->cfa,
+                      fde->instrs,
+                      fde->instr_len,
+                      rip,
+                      stack,
+                      stack_size,
+                      frame,
+                      ip);
 }
