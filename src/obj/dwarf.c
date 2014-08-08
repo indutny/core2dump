@@ -700,6 +700,10 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
       default:
         break;
     }
+
+    /* Know where to stop */
+    if (state->loc > rip)
+      break;
   }
 
   return cd_ok();
@@ -708,6 +712,7 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
 
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             uint64_t rip,
+                            cd_sym_t* sym,
                             char* stack,
                             uint64_t stack_size,
                             uint64_t* frame,
@@ -730,6 +735,7 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
 
   /* Copy default values */
   fst = ist;
+  fst.loc = sym->value;
 
   /* Get FDE specific stuff */
   err = cd_dwarf_run(fde->cie,

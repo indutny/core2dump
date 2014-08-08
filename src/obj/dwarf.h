@@ -9,6 +9,7 @@
 
 /* Forward declarations */
 struct cd_obj_s;
+struct cd_sym_s;
 
 typedef struct cd_dwarf_cfa_s cd_dwarf_cfa_t;
 typedef struct cd_dwarf_cie_s cd_dwarf_cie_t;
@@ -158,6 +159,7 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
                             cd_dwarf_fde_t** res);
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             uint64_t rip,
+                            struct cd_sym_s* sym,
                             char* stack,
                             uint64_t stack_size,
                             uint64_t* frame,

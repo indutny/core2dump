@@ -406,12 +406,10 @@ void cd_obj_internal_free(cd_obj_t* obj) {
 
 cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
                             uint64_t addr,
-                            const char** sym,
-                            int* sym_len,
+                            cd_sym_t** res,
                             cd_dwarf_fde_t** fde) {
   cd_error_t err;
   cd_sym_t idx;
-  cd_sym_t* r;
   QUEUE* q;
 
   err = cd_obj_init_syms(obj);
@@ -419,15 +417,12 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
     return err;
 
   idx.value = addr;
-  r = cd_splay_find(&obj->sym_splay, &idx);
-  if (r == NULL)
+  *res = cd_splay_find(&obj->sym_splay, &idx);
+  if (*res == NULL)
     goto not_found;
 
-  if (r->name == NULL && r->nlen == 0)
+  if ((*res)->name == NULL && (*res)->nlen == 0)
     goto not_found;
-
-  *sym = r->name;
-  *sym_len = r->nlen;
 
   /* Get FDE */
   err = cd_obj_init_dwarf(obj);
@@ -451,7 +446,7 @@ not_found:
     cd_obj_t* dso;
 
     dso = container_of(q, cd_obj_t, member);
-    err = cd_obj_lookup_ip(dso, addr, sym, sym_len, fde);
+    err = cd_obj_lookup_ip(dso, addr, res, fde);
     if (cd_is_ok(err) || err.code != kCDErrNotFound)
       return err;
   }
@@ -488,24 +483,32 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   frame_end = 0;
   ip = thread.regs.ip;
   while (frame_end < stack_size) {
-    cd_frame_t frame;
+    cd_sym_t* sym;
     cd_dwarf_fde_t* fde;
+    cd_frame_t frame;
 
-    err = cd_obj_lookup_ip(obj, ip, &frame.sym, &frame.sym_len, &fde);
+    err = cd_obj_lookup_ip(obj, ip, &sym, &fde);
     if (err.code == kCDErrNotFound) {
-      frame.sym = NULL;
-      frame.sym_len = 0;
       fde = NULL;
+      sym = NULL;
     } else if (!cd_is_ok(err)) {
       return err;
     }
 
     frame.ip = ip;
+    if (sym == NULL) {
+      frame.sym = NULL;
+      frame.sym_len = 0;
+    } else {
+      frame.sym = sym->name;
+      frame.sym_len = sym->nlen;
+    }
     frame.stop = stack + frame_end;
 
     if (fde != NULL) {
       err = cd_dwarf_fde_run(fde,
                              ip,
+                             sym,
                              stack + frame_end,
                              stack_size - frame_end,
                              &frame_start,
