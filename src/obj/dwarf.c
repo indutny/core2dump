@@ -27,14 +27,12 @@ static cd_error_t cd_dwarf_read(char** data,
                                 uint8_t enc,
                                 int x64,
                                 uint64_t* res);
-cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
+cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
                         char* instrs,
                         uint64_t instr_len,
                         uint64_t rip,
-                        char* stack,
-                        uint64_t stack_size,
-                        uint64_t* frame,
-                        uint64_t* ip);
+                        cd_dwarf_state_t* prev,
+                        cd_dwarf_state_t* state);
 static int cd_dwarf_sort_fde(cd_dwarf_fde_t* a, cd_dwarf_fde_t* b);
 
 
@@ -352,6 +350,9 @@ cd_error_t cd_dwarf_parse_cie(cd_dwarf_cfa_t* cfa,
   if (!cd_is_ok(err))
     goto fatal;
 
+  cie->instr_len = end - *data;
+  cie->instrs = *data;
+
   /* Skip the rest */
   *data = end;
 
@@ -513,43 +514,52 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
 }
 
 
-cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
+cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
                         char* instrs,
                         uint64_t instr_len,
                         uint64_t rip,
-                        char* stack,
-                        uint64_t stack_size,
-                        uint64_t* frame,
-                        uint64_t* ip) {
+                        cd_dwarf_state_t* prev,
+                        cd_dwarf_state_t* state) {
   char* end;
   char* ptr;
   int x64;
+  int ptr_size;
+  int64_t data_align;
 
   ptr = instrs;
   end = ptr + instr_len;
-  x64 = cfa->obj->is_x64;
+  x64 = cie->cfa->obj->is_x64;
+  ptr_size = x64 ? 8 : 4;
+  data_align = cie->data_align;
 
   while (ptr < end) {
     cd_error_t err;
-
-    uint8_t opcode = *(uint8_t*) ptr++;
-    uint8_t hi = opcode & kCDDwarfCFAHighMask;
-    uint8_t lo = opcode & kCDDwarfCFALowMask;
+    cd_dwarf_cfa_instr_t opcode;
+    uint8_t hi;
+    uint8_t lo;
     uint64_t arg0;
     uint64_t arg1;
+
+    opcode = *(uint8_t*) ptr++;
+    hi = opcode & kCDDwarfCFAHighMask;
+    lo = opcode & kCDDwarfCFALowMask;
+
+    arg0 = 0;
+    arg1 = 0;
 
     if (hi != 0)
       opcode = hi;
     else
       opcode = lo;
 
+    /* Read opcode arguments */
     switch (opcode) {
       /* Inline arg */
-      case kCDDwarfCFAOffset:
       case kCDDwarfCFARestore:
+      case kCDDwarfCFAAdvanceLoc:
         arg0 = (uint64_t) lo;
         break;
-      case kCDDwarfCFAAdvanceLoc:
+      case kCDDwarfCFAOffset:
         arg0 = (uint64_t) lo;
         err = cd_dwarf_leb128(&ptr, end - ptr, &arg1);
         break;
@@ -592,11 +602,13 @@ cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
         break;
       case kCDDwarfCFADefCFAExpression:
         /* XXX Block?! */
+        abort();
         break;
       case kCDDwarfCFAExpression:
       case kCDDwarfCFAValExpression:
         err = cd_dwarf_leb128(&ptr, end - ptr, &arg0);
         /* XXX arg1 - Block?! */
+        abort();
         break;
       case kCDDwarfCFAOffsetExtendedSF:
       case kCDDwarfCFADefCFASF:
@@ -616,6 +628,78 @@ cd_error_t cd_dwarf_run(cd_dwarf_cfa_t* cfa,
     }
     if (!cd_is_ok(err))
       return err;
+
+    /* Execute opcode */
+    switch (opcode) {
+      case kCDDwarfCFAAdvanceLoc:
+      case kCDDwarfCFAAdvanceLoc1:
+      case kCDDwarfCFAAdvanceLoc2:
+      case kCDDwarfCFAAdvanceLoc4:
+        state->loc += arg0;
+        break;
+      case kCDDwarfCFADefCFA:
+        state->cfa.type = kCDDwarfLocMem;
+        state->cfa.reg = arg0;
+        state->cfa.off = arg1;
+        break;
+      case kCDDwarfCFADefCFASF:
+        state->cfa.type = kCDDwarfLocMem;
+        state->cfa.reg = arg0;
+        state->cfa.off = (int64_t) arg1 * ptr_size;
+        break;
+      case kCDDwarfCFADefCFARegister:
+        state->cfa.type = kCDDwarfLocMem;
+        state->cfa.reg = arg0;
+        break;
+      case kCDDwarfCFADefCFAOffset:
+        state->cfa.type = kCDDwarfLocMem;
+        state->cfa.off = arg0;
+        break;
+      case kCDDwarfCFADefCFAOffsetSF:
+        state->cfa.type = kCDDwarfLocMem;
+        state->cfa.off = (int64_t) arg0 * ptr_size;
+        break;
+
+      /* Register stuff */
+      case kCDDwarfCFAUndefined:
+        state->regs[arg0].type = kCDDwarfLocUndefined;
+        break;
+      case kCDDwarfCFASameValue:
+        state->regs[arg0].type = kCDDwarfLocReg;
+        state->regs[arg0].reg = arg0;
+        break;
+      case kCDDwarfCFAOffset:
+      case kCDDwarfCFAOffsetExtended:
+        state->regs[arg0].type = kCDDwarfLocMem;
+        state->regs[arg0].off = arg1 * data_align;
+        break;
+      case kCDDwarfCFAOffsetExtendedSF:
+        state->regs[arg0].type = kCDDwarfLocMem;
+        state->regs[arg0].off = (int64_t) arg1 * ptr_size * data_align;
+        break;
+      case kCDDwarfCFAValOffset:
+        state->regs[arg0].type = kCDDwarfLocValue;
+        state->regs[arg0].off = arg1 * data_align;
+        break;
+      case kCDDwarfCFAValOffsetSF:
+        state->regs[arg0].type = kCDDwarfLocValue;
+        state->regs[arg0].off = (int64_t) arg1 * ptr_size * data_align;
+        break;
+      case kCDDwarfCFARegister:
+        state->regs[arg0].type = kCDDwarfLocReg;
+        state->regs[arg0].reg = arg1;
+        break;
+      case kCDDwarfCFARestore:
+      case kCDDwarfCFARestoreExtended:
+        state->regs[arg0] = prev->regs[arg0];
+        break;
+      case kCDDwarfCFARememberState:
+      case kCDDwarfCFARestoreState:
+        abort();
+        break;
+      default:
+        break;
+    }
   }
 
   return cd_ok();
@@ -628,12 +712,34 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             uint64_t stack_size,
                             uint64_t* frame,
                             uint64_t* ip) {
-  return cd_dwarf_run(fde->cie->cfa,
-                      fde->instrs,
-                      fde->instr_len,
-                      rip,
-                      stack,
-                      stack_size,
-                      frame,
-                      ip);
+  cd_error_t err;
+  cd_dwarf_state_t ist;
+  cd_dwarf_state_t fst;
+
+  memset(&ist, 0, sizeof(ist));
+
+  /* Get defaults */
+  err = cd_dwarf_run(fde->cie,
+                     fde->cie->instrs,
+                     fde->cie->instr_len,
+                     rip,
+                     NULL,
+                     &ist);
+  if (!cd_is_ok(err))
+    return err;
+
+  /* Copy default values */
+  fst = ist;
+
+  /* Get FDE specific stuff */
+  err = cd_dwarf_run(fde->cie,
+                     fde->instrs,
+                     fde->instr_len,
+                     rip,
+                     NULL,
+                     &fst);
+  if (!cd_is_ok(err))
+    return err;
+
+  return cd_ok();
 }

@@ -14,6 +14,10 @@ typedef struct cd_dwarf_cfa_s cd_dwarf_cfa_t;
 typedef struct cd_dwarf_cie_s cd_dwarf_cie_t;
 typedef struct cd_dwarf_fde_s cd_dwarf_fde_t;
 typedef enum cd_dwarf_enc_e cd_dwarf_enc_t;
+typedef enum cd_dwarf_cfa_instr_e cd_dwarf_cfa_instr_t;
+typedef struct cd_dwarf_state_s cd_dwarf_state_t;
+typedef enum cd_dwarf_loc_type_e cd_dwarf_loc_type_t;
+typedef struct cd_dwarf_loc_s cd_dwarf_loc_t;
 
 struct cd_dwarf_cfa_s {
   QUEUE cies;
@@ -41,6 +45,9 @@ struct cd_dwarf_cie_s {
   uint64_t aug_len;
   char* aug_data;
   uint8_t fde_enc;
+
+  uint64_t instr_len;
+  char* instrs;
 };
 
 struct cd_dwarf_fde_s {
@@ -115,6 +122,27 @@ enum cd_dwarf_cfa_instr_e {
   kCDDwarfCFAValExpression = 0x16,
   kCDDwarfCFALoUser = 0x17,
   kCDDwarfCFAHiUser = 0x3f
+};
+
+enum cd_dwarf_loc_type_e {
+  kCDDwarfLocNone = 0x0,
+  kCDDwarfLocReg = 0x1,
+  kCDDwarfLocMem = 0x2,
+  kCDDwarfLocValue = 0x3,
+  kCDDwarfLocUndefined = 0x4
+};
+
+struct cd_dwarf_loc_s {
+  cd_dwarf_loc_type_t type;
+  uint64_t reg;
+  int64_t off;
+};
+
+struct cd_dwarf_state_s {
+  uint64_t loc;
+
+  cd_dwarf_loc_t cfa;
+  cd_dwarf_loc_t regs[32];
 };
 
 

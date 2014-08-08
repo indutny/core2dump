@@ -437,6 +437,12 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   *fde = NULL;
   cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
 
+  /* Check that FDE covers the symbol */
+  if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
+    *fde = NULL;
+    return cd_ok();
+  }
+
   return cd_ok();
 
 not_found:
@@ -497,7 +503,6 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     frame.ip = ip;
     frame.stop = stack + frame_end;
 
-    fde = NULL;
     if (fde != NULL) {
       err = cd_dwarf_fde_run(fde,
                              ip,
