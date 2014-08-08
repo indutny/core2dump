@@ -494,7 +494,7 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     cd_frame_t frame;
     cd_dwarf_fde_t* fde;
 
-    err = cd_obj_lookup_ip(obj, frame.ip, &frame.sym, &frame.sym_len, &fde);
+    err = cd_obj_lookup_ip(obj, ip, &frame.sym, &frame.sym_len, &fde);
     if (err.code == kCDErrNotFound) {
       frame.sym = NULL;
       frame.sym_len = 0;
@@ -506,7 +506,8 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     frame.ip = ip;
     frame.stop = stack + frame_end;
 
-    if (0 && fde != NULL) {
+    fde = NULL;
+    if (fde != NULL) {
       err = cd_dwarf_fde_run(fde,
                              ip,
                              stack + frame_end,
@@ -520,8 +521,12 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
       frame_start -= thread.stack.top;
     }
 
-    if (frame_start < frame_end || frame_start >= stack_size)
+    if (frame_start < frame_end)
       return cd_error(kCDErrStackOOB);
+
+    /* End of stack */
+    if (frame_start >= stack_size)
+      break;
 
     frame.start = stack + frame_start;
 
