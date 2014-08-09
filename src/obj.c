@@ -466,6 +466,7 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
   cd_obj_thread_t last;
   cd_obj_thread_t cur;
   char* stack;
+  uint64_t start;
   uint64_t stack_size;
   uint64_t frame_start;
   uint64_t frame_end;
@@ -475,14 +476,12 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     return err;
 
   stack_size = cur.stack.bottom - cur.stack.top;
-  err = cd_obj_get(obj,
-                   cur.stack.top,
-                   stack_size,
-                   (void**) &stack);
+  start = cur.stack.top;
+  err = cd_obj_get(obj, start,stack_size, (void**) &stack);
   if (!cd_is_ok(err))
     return err;
 
-  frame_start = cur.stack.frame - cur.stack.top;
+  frame_start = cur.stack.frame - start;
   frame_end = 0;
   while (frame_end < stack_size) {
     cd_sym_t* sym;
@@ -510,49 +509,47 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     }
 
     /* No FDE case, just use defaults */
-    if (fde == NULL) {
-      frame.start = stack + frame_start;
-
-      if (frame_start < frame_end)
-        return cd_error(kCDErrStackOOB);
-
-      /* End of stack */
-      if (frame_start >= stack_size)
-        break;
-
-      err = cb(obj, &frame, arg);
+    if (fde != NULL) {
+      /* Use FDE to figure out thread state before entering the proc */
+      err = cd_dwarf_fde_run(fde,
+                             stack + (last.stack.top - start),
+                             stack_size - (last.stack.top - start),
+                             &last,
+                             &cur);
       if (!cd_is_ok(err))
         return err;
 
-      /* Next frame */
-      frame_end = frame_start;
-      cur.regs.ip =
-          *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
-      frame_start = *(uint64_t*) (stack + frame_start);
-
-      /* Change thread state, so the FDE emulator could see it */
-      cur.stack.frame = frame_start;
-
-      /* Relocate value */
-      frame_start -= last.stack.top;
-
-      continue;
+      frame_start = cur.stack.frame - start;
     }
 
-    /* Use FDE to figure out thread state before entering the proc */
-    err = cd_dwarf_fde_run(fde,
-                           stack + (last.stack.top - last.stack.bottom),
-                           stack_size - (last.stack.top - last.stack.bottom),
-                           &last,
-                           &cur);
+    frame.start = stack + frame_start;
+    if (frame_start < frame_end)
+      return cd_error(kCDErrStackOOB);
+
+    /* End of stack */
+    if (frame_start >= stack_size)
+      break;
+
+    err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))
       return err;
 
-    frame_start = last.stack.top;
-    frame.start = stack + frame_start;
+    /* FDE - is present, next thread state is already filled */
+    if (fde != NULL)
+      continue;
 
-    /* XXX Implement me */
-    abort();
+    /* Next frame */
+    frame_end = frame_start;
+    cur.regs.ip =
+        *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
+    frame_start = *(uint64_t*) (stack + frame_start);
+
+    /* Change thread state, so the FDE emulator could see it */
+    cur.stack.frame = frame_start;
+    cur.stack.top = frame_end + (cd_obj_is_x64(obj) ? 16 : 8) + start;
+
+    /* Relocate value */
+    frame_start -= start;
   }
 
   return cd_error(kCDErrOk);
