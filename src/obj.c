@@ -510,7 +510,6 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     }
 
     /* No FDE case, just use defaults */
-    fde = NULL;
     if (fde == NULL) {
       frame.start = stack + frame_start;
 
@@ -531,6 +530,9 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
           *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
       frame_start = *(uint64_t*) (stack + frame_start);
 
+      /* Change thread state, so the FDE emulator could see it */
+      cur.stack.frame = frame_start;
+
       /* Relocate value */
       frame_start -= last.stack.top;
 
@@ -539,11 +541,15 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
 
     /* Use FDE to figure out thread state before entering the proc */
     err = cd_dwarf_fde_run(fde,
-                           stack + frame_end,
-                           stack_size - frame_end,
+                           stack + (last.stack.top - last.stack.bottom),
+                           stack_size - (last.stack.top - last.stack.bottom),
+                           &last,
                            &cur);
     if (!cd_is_ok(err))
       return err;
+
+    frame_start = last.stack.top;
+    frame.start = stack + frame_start;
 
     /* XXX Implement me */
     abort();

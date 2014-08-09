@@ -33,6 +33,7 @@ typedef enum cd_error_code_e cd_error_code_t;
     V(DwarfOOB, 0x1b)                                                         \
     V(DwarfInvalidAugment, 0x1c)                                              \
     V(DwarfInstruction, 0x1d)                                                 \
+    V(DwarfNoCFA, 0x1e)                                                       \
 
 #define CD_ERROR_DECL(X, Y) kCDErr##X = Y,
 

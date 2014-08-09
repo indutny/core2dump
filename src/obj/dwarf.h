@@ -19,6 +19,7 @@ typedef enum cd_dwarf_cfa_instr_e cd_dwarf_cfa_instr_t;
 typedef struct cd_dwarf_state_s cd_dwarf_state_t;
 typedef enum cd_dwarf_loc_type_e cd_dwarf_loc_type_t;
 typedef struct cd_dwarf_loc_s cd_dwarf_loc_t;
+typedef enum cd_dwarf_reg_e cd_dwarf_reg_t;
 
 struct cd_dwarf_cfa_s {
   QUEUE cies;
@@ -146,6 +147,12 @@ struct cd_dwarf_state_s {
   cd_dwarf_loc_t regs[32];
 };
 
+enum cd_dwarf_reg_e {
+  kCDDwarfRegFrame,
+  kCDDwarfRegStack,
+  kCDDwarfRegIP
+};
+
 
 cd_error_t cd_dwarf_parse_cfa(struct cd_obj_s* obj,
                               uint64_t sect_addr,
@@ -160,7 +167,8 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             char* stack,
                             uint64_t stack_size,
-                            struct cd_obj_thread_s* thread);
+                            struct cd_obj_thread_s* othread,
+                            struct cd_obj_thread_s* nthread);
 
 
 #endif  /* SRC_OBJ_DWARF_H_ */
