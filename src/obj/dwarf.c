@@ -711,12 +711,9 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
 
 
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
-                            uint64_t rip,
-                            cd_sym_t* sym,
                             char* stack,
                             uint64_t stack_size,
-                            uint64_t* frame,
-                            uint64_t* ip) {
+                            cd_obj_thread_t* thread) {
   cd_error_t err;
   cd_dwarf_state_t ist;
   cd_dwarf_state_t fst;
@@ -727,7 +724,7 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
   err = cd_dwarf_run(fde->cie,
                      fde->cie->instrs,
                      fde->cie->instr_len,
-                     rip,
+                     thread->regs.ip,
                      NULL,
                      &ist);
   if (!cd_is_ok(err))
@@ -735,17 +732,21 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
 
   /* Copy default values */
   fst = ist;
-  fst.loc = sym->value;
+  fst.loc = fde->init_loc + fde->cie->cfa->obj->aslr;
 
   /* Get FDE specific stuff */
   err = cd_dwarf_run(fde->cie,
                      fde->instrs,
                      fde->instr_len,
-                     rip,
+                     thread->regs.ip,
                      NULL,
                      &fst);
   if (!cd_is_ok(err))
     return err;
+
+  if (fde->cie->cfa->obj->is_x64) {
+  } else {
+  }
 
   return cd_ok();
 }

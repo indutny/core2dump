@@ -430,10 +430,13 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
     return err;
 
   *fde = NULL;
-  cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
-
+  err = cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
+  if (err.code == kCDErrNotFound)
+    *fde = NULL;
+  else if (!cd_is_ok(err))
+    return err;
   /* Check that FDE covers the symbol */
-  if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
+  else if ((*fde)->init_loc + obj->aslr + (*fde)->range <= addr) {
     *fde = NULL;
     return cd_ok();
   }
@@ -460,34 +463,35 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
                                 cd_iterate_stack_cb cb,
                                 void* arg) {
   cd_error_t err;
-  cd_obj_thread_t thread;
+  cd_obj_thread_t last;
+  cd_obj_thread_t cur;
   char* stack;
   uint64_t stack_size;
   uint64_t frame_start;
   uint64_t frame_end;
-  uint64_t ip;
 
-  err = cd_obj_get_thread(obj, thread_id, &thread);
+  err = cd_obj_get_thread(obj, thread_id, &cur);
   if (!cd_is_ok(err))
     return err;
 
-  stack_size = thread.stack.bottom - thread.stack.top;
+  stack_size = cur.stack.bottom - cur.stack.top;
   err = cd_obj_get(obj,
-                   thread.stack.top,
+                   cur.stack.top,
                    stack_size,
                    (void**) &stack);
   if (!cd_is_ok(err))
     return err;
 
-  frame_start = thread.stack.frame - thread.stack.top;
+  frame_start = cur.stack.frame - cur.stack.top;
   frame_end = 0;
-  ip = thread.regs.ip;
   while (frame_end < stack_size) {
     cd_sym_t* sym;
     cd_dwarf_fde_t* fde;
     cd_frame_t frame;
 
-    err = cd_obj_lookup_ip(obj, ip, &sym, &fde);
+    last = cur;
+
+    err = cd_obj_lookup_ip(obj, last.regs.ip, &sym, &fde);
     if (err.code == kCDErrNotFound) {
       fde = NULL;
       sym = NULL;
@@ -495,7 +499,8 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
       return err;
     }
 
-    frame.ip = ip;
+    frame.ip = last.regs.ip;
+    frame.stop = stack + frame_end;
     if (sym == NULL) {
       frame.sym = NULL;
       frame.sym_len = 0;
@@ -503,45 +508,45 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
       frame.sym = sym->name;
       frame.sym_len = sym->nlen;
     }
-    frame.stop = stack + frame_end;
 
-    if (fde != NULL) {
-      err = cd_dwarf_fde_run(fde,
-                             ip,
-                             sym,
-                             stack + frame_end,
-                             stack_size - frame_end,
-                             &frame_start,
-                             &ip);
+    /* No FDE case, just use defaults */
+    fde = NULL;
+    if (fde == NULL) {
+      frame.start = stack + frame_start;
+
+      if (frame_start < frame_end)
+        return cd_error(kCDErrStackOOB);
+
+      /* End of stack */
+      if (frame_start >= stack_size)
+        break;
+
+      err = cb(obj, &frame, arg);
       if (!cd_is_ok(err))
         return err;
 
-      /* Relocate value */
-      frame_start -= thread.stack.top;
-    }
-
-    if (frame_start < frame_end)
-      return cd_error(kCDErrStackOOB);
-
-    /* End of stack */
-    if (frame_start >= stack_size)
-      break;
-
-    frame.start = stack + frame_start;
-
-    err = cb(obj, &frame, arg);
-    if (!cd_is_ok(err))
-      return err;
-
-    /* Next frame */
-    frame_end = frame_start;
-    if (fde == NULL) {
-      ip = *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
+      /* Next frame */
+      frame_end = frame_start;
+      cur.regs.ip =
+          *(uint64_t*) (stack + frame_start + (cd_obj_is_x64(obj) ? 8 : 4));
       frame_start = *(uint64_t*) (stack + frame_start);
 
       /* Relocate value */
-      frame_start -= thread.stack.top;
+      frame_start -= last.stack.top;
+
+      continue;
     }
+
+    /* Use FDE to figure out thread state before entering the proc */
+    err = cd_dwarf_fde_run(fde,
+                           stack + frame_end,
+                           stack_size - frame_end,
+                           &cur);
+    if (!cd_is_ok(err))
+      return err;
+
+    /* XXX Implement me */
+    abort();
   }
 
   return cd_error(kCDErrOk);
