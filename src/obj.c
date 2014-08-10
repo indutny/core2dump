@@ -512,8 +512,9 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     if (fde != NULL) {
       /* Use FDE to figure out thread state before entering the proc */
       err = cd_dwarf_fde_run(fde,
-                             stack + (last.stack.top - start),
-                             stack_size - (last.stack.top - start),
+                             stack,
+                             stack_size,
+                             start,
                              &last,
                              &cur);
       if (!cd_is_ok(err))

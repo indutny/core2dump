@@ -167,6 +167,7 @@ cd_error_t cd_dwarf_get_fde(cd_dwarf_cfa_t* cfa,
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             char* stack,
                             uint64_t stack_size,
+                            uint64_t stack_off,
                             struct cd_obj_thread_s* othread,
                             struct cd_obj_thread_s* nthread);
 

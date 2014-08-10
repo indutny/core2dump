@@ -819,6 +819,7 @@ cd_error_t cd_dwarf_load(cd_dwarf_state_t* state,
 cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                             char* stack,
                             uint64_t stack_size,
+                            uint64_t stack_off,
                             cd_obj_thread_t* othread,
                             cd_obj_thread_t* nthread) {
   cd_error_t err;
@@ -854,6 +855,18 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
   if (fst.cfa.type == kCDDwarfLocNone)
     return cd_error_str(kCDErrDwarfNoCFA, "No CFA in CIE and FDE");
 
+  /* Get new stack top */
+  err = cd_dwarf_oreg(othread,
+                      fde->cie->cfa->obj->is_x64,
+                      fst.cfa.reg,
+                      &nthread->stack.top);
+  if (!cd_is_ok(err))
+    return err;
+  nthread->stack.top += fst.cfa.off;
+
+  stack += nthread->stack.top - stack_off;
+  stack_size -= nthread->stack.top - stack_off;
+
   /* Get IP */
   err = cd_dwarf_load(&fst,
                       othread,
@@ -875,16 +888,6 @@ cd_error_t cd_dwarf_fde_run(cd_dwarf_fde_t* fde,
                       stack_size);
   if (!cd_is_ok(err))
     return err;
-
-  /* Get new stack top */
-  err = cd_dwarf_oreg(othread,
-                      fde->cie->cfa->obj->is_x64,
-                      fst.cfa.reg,
-                      &nthread->stack.top);
-  if (!cd_is_ok(err))
-    return err;
-
-  nthread->stack.top += fst.cfa.off;
 
   return cd_ok();
 }
