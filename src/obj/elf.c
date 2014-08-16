@@ -222,7 +222,7 @@ cd_error_t cd_elf_obj_iterate_segs(cd_elf_obj_t* obj,
     seg.end = vmaddr + vmsize;
     seg.fileoff = fileoff;
     seg.ptr = (char*) obj->addr + fileoff;
-    seg.sects = 0;
+    seg.sects = 1;
 
     err = cb((cd_obj_t*) obj, &seg, arg);
     if (!cd_is_ok(err))
