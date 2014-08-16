@@ -119,11 +119,11 @@ void cd_visitor_destroy(cd_state_t* state) {
     node = container_of(qn, cd_node_t, member);
 
     /* Free edges */
-    while (!QUEUE_EMPTY(&node->edges.outgoing)) {
+    while (!QUEUE_EMPTY(&node->edges.incoming)) {
       QUEUE* qe;
       cd_edge_t* edge;
 
-      qe = QUEUE_HEAD(&node->edges.outgoing);
+      qe = QUEUE_HEAD(&node->edges.incoming);
 
       edge = container_of(qe, cd_edge_t, out);
       state->edges.count--;
