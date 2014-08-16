@@ -393,6 +393,9 @@ void cd_obj_internal_free(cd_obj_t* obj) {
     cd_splay_destroy(&obj->seg_splay);
   }
 
+  if (obj->has_syms)
+    cd_splay_destroy(&obj->sym_splay);
+
   /* Free DSOs */
   while (!QUEUE_EMPTY(&obj->dso)) {
     QUEUE* q;
