@@ -550,10 +550,6 @@ cd_error_t cd_obj_iterate_stack(cd_obj_t* obj,
     if (cur.stack.top >= start + stack_size)
       break;
 
-    /* Skip ip and rbp */
-    if (fde == NULL)
-      frame.start += cd_obj_is_x64(obj) ? 16 : 8;
-
     err = cb(obj, &frame, arg);
     if (!cd_is_ok(err))
       return err;
