@@ -102,6 +102,8 @@ void cd_dwarf_free_cfa(cd_dwarf_cfa_t* cfa) {
 
     cd_dwarf_free_cie(cie);
   }
+  cd_splay_destroy(&cfa->cie_splay);
+  cd_splay_destroy(&cfa->fde_splay);
   free(cfa);
 }
 
