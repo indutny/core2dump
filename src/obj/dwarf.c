@@ -618,6 +618,8 @@ cd_error_t cd_dwarf_run(cd_dwarf_cie_t* cie,
     else
       opcode = lo;
 
+    err = cd_ok();
+
     /* Read opcode arguments */
     switch (opcode) {
       /* Inline arg */
