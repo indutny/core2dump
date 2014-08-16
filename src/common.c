@@ -2,6 +2,9 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdint.h>
+#if defined(__FreeBSD__)
+# define _WITH_DPRINTF
+#endif
 #include <stdio.h>
 #include <string.h>
 
