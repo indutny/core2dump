@@ -197,8 +197,10 @@ cd_error_t cd_obj_init_syms(cd_obj_t* obj) {
                 (int (*)(const void*, const void*)) cd_symbol_sort);
   obj->sym_splay.allocated = 1;
 
-  if (cd_hashmap_init(&obj->syms, kCDSymtabInitialSize, 0) != 0)
+  if (cd_hashmap_init(&obj->syms, kCDSymtabInitialSize, 0) != 0) {
+    cd_splay_destroy(&obj->sym_splay);
     return cd_error_str(kCDErrNoMem, "cd_hashmap_t");
+  }
   obj->has_syms = 1;
 
   if (cd_obj_is_core(obj))
@@ -384,17 +386,16 @@ cd_error_t cd_obj_internal_init(cd_obj_t* obj) {
 
 
 void cd_obj_internal_free(cd_obj_t* obj) {
-  if (obj->has_syms)
+  if (obj->has_syms) {
+    cd_splay_destroy(&obj->sym_splay);
     cd_hashmap_destroy(&obj->syms);
+  }
   obj->has_syms = 0;
 
   if (obj->segment_count != -1) {
     free(obj->segments);
     cd_splay_destroy(&obj->seg_splay);
   }
-
-  if (obj->has_syms)
-    cd_splay_destroy(&obj->sym_splay);
 
   /* Free DSOs */
   while (!QUEUE_EMPTY(&obj->dso)) {
