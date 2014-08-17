@@ -64,6 +64,7 @@ cd_obj_t* cd_obj_new_ex(cd_obj_method_t* method,
     res->fd = fd;
   } else {
     close(fd);
+    return NULL;
   }
 
   res->path = path;
