@@ -1,0 +1,33 @@
+{
+  "name": "core2dump",
+  "version": "0.0.0",
+  "description": "Core 2 Dump",
+  "bin": {
+    "core2dump": "./npm/core2dump"
+  },
+  "main": "index.js",
+  "scripts": {
+    "preinstall": "node-gyp configure && node-gyp rebuild && node npm/locate.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:indutny/core2dump.git"
+  },
+  "keywords": [
+    "Core",
+    "file",
+    "dump",
+    "heapdump",
+    "stack",
+    "trace",
+    "v8"
+  ],
+  "author": "Fedor Indutny <fedor@indutny.com>",
+  "license": "MIT",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://github.com/indutny/core2dump/issues"
+  },
+  "homepage": "https://github.com/indutny/core2dump"
+}

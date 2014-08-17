@@ -1,2 +1,7 @@
 /tools/
 /out/
+/build/
+node_modules/
+npm-debug.log
+npm/core2dump
+npm/core2dump.exe
