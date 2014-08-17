@@ -393,8 +393,11 @@ cd_error_t cd_tag_map_props(cd_state_t* state, cd_node_t* node) {
   cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(constructor)", 13);
   V8_CORE_PTR(node->obj, cd_v8_class_Map__prototype__Object, ptr);
   cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(prototype)", 11);
-  V8_CORE_PTR(node->obj, cd_v8_class_Map__dependent_code__DependentCode, ptr);
-  cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(dependent code)", 16);
+
+  if (cd_v8_class_Map__dependent_code__DependentCode != -1) {
+    V8_CORE_PTR(node->obj, cd_v8_class_Map__dependent_code__DependentCode, ptr);
+    cd_tag(state, node, *ptr, NULL, kCDEdgeInternal, "(dependent code)", 16);
+  }
 
   return cd_ok();
 }
