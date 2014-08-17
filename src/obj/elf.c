@@ -8,10 +8,22 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #if defined(__linux__)
-#include <linux/elf.h>
+# include <linux/elf.h>
 #else
-#include <elf.h>
-#endif
+# include <elf.h>
+#endif  /* __linux__ */
+
+#if defined(__FreeBSD__)
+# include <sys/user.h>
+# include <machine/reg.h>
+# ifdef	__i386__
+typedef struct reg cd_reg32_t;
+typedef struct __reg64 cd_reg64_t;
+# else
+typedef struct reg cd_reg64_t;
+typedef struct reg32 cd_reg32_t;
+# endif
+#endif  /* __FreeBSD__ */
 
 #include "obj/elf.h"
 #include "error.h"
@@ -45,6 +57,7 @@ static cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
                                                Elf64_Nhdr* nhdr,
                                                char* desc,
                                                void* arg);
+static int cd_elf_obj_is_core(cd_elf_obj_t* obj);
 
 
 struct cd_elf_obj_s {
@@ -101,7 +114,7 @@ cd_elf_obj_t* cd_elf_obj_new(int fd, cd_obj_opts_t* opts, cd_error_t* err) {
   obj->h64 = obj->addr;
 
   if (memcmp(obj->h64->e_ident, ELFMAG, SELFMAG) != 0) {
-    *err = cd_error_str(kCDErrInvalidMagic, obj->h64->e_ident);
+    *err = cd_error_str(kCDErrInvalidMagic, (const char*) obj->h64->e_ident);
     goto failed_magic2;
   }
 
@@ -479,6 +492,7 @@ cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
 
       /* Don't forget alignment */
       ent += nhdr->n_namesz;
+#if defined(__linux__)
       if (obj->is_x64) {
         if ((nhdr->n_namesz & 7) != 0)
           ent += 8 - (nhdr->n_namesz & 7);
@@ -487,6 +501,9 @@ cd_error_t cd_elf_obj_iterate_notes(cd_elf_obj_t* obj,
         if ((nhdr->n_descsz & 7) != 0)
           ent += 8 - (nhdr->n_descsz & 7);
       } else {
+#else
+      if (1) {
+#endif  /* __linux__ */
         if ((nhdr->n_namesz & 3) != 0)
           ent += 4 - (nhdr->n_namesz & 3);
         desc = ent;
@@ -535,6 +552,7 @@ cd_error_t cd_elf_obj_get_thread_iterate(cd_elf_obj_t* obj,
     return cd_ok();
   }
 
+#if defined(__linux__)
   if (obj->is_x64) {
     desc += 112;
     thread->regs.count = (nhdr->n_descsz - 112) / sizeof(uint64_t);
@@ -554,6 +572,80 @@ cd_error_t cd_elf_obj_get_thread_iterate(cd_elf_obj_t* obj,
     thread->stack.frame = thread->regs.values[5];
     thread->stack.top = thread->regs.values[15];
   }
+#elif defined(__FreeBSD__)
+  if (1) {
+    char* regs;
+
+    if (obj->is_x64) {
+      cd_reg64_t* regs;
+
+      thread->regs.count = 27;
+      regs = (cd_reg64_t*) (desc + 48);
+
+      thread->regs.values[0] = regs->r_r15;
+      thread->regs.values[1] = regs->r_r14;
+      thread->regs.values[2] = regs->r_r13;
+      thread->regs.values[3] = regs->r_r12;
+      thread->regs.values[4] = regs->r_r11;
+      thread->regs.values[5] = regs->r_r10;
+      thread->regs.values[6] = regs->r_r9;
+      thread->regs.values[7] = regs->r_r8;
+      thread->regs.values[8] = regs->r_rdi;
+      thread->regs.values[9] = regs->r_rsi;
+      thread->regs.values[10] = regs->r_rbp;
+      thread->regs.values[11] = regs->r_rbx;
+      thread->regs.values[12] = regs->r_rdx;
+      thread->regs.values[13] = regs->r_rcx;
+      thread->regs.values[14] = regs->r_rax;
+      thread->regs.values[15] = regs->r_trapno;
+      thread->regs.values[16] = regs->r_fs;
+      thread->regs.values[17] = regs->r_gs;
+      thread->regs.values[18] = regs->r_err;
+      thread->regs.values[19] = regs->r_es;
+      thread->regs.values[20] = regs->r_ds;
+      thread->regs.values[21] = regs->r_rip;
+      thread->regs.values[23] = regs->r_cs;
+      thread->regs.values[24] = regs->r_rflags;
+      thread->regs.values[25] = regs->r_rsp;
+      thread->regs.values[26] = regs->r_ss;
+
+      thread->regs.ip = regs->r_rip;
+      thread->stack.frame = regs->r_rbp;
+      thread->stack.top = regs->r_rsp;
+    } else {
+      cd_reg32_t* regs;
+
+      thread->regs.count = 19;
+      regs = (cd_reg32_t*) (desc + 7 * 4);
+
+      thread->regs.values[0] = regs->r_fs;
+      thread->regs.values[1] = regs->r_es;
+      thread->regs.values[2] = regs->r_ds;
+      thread->regs.values[3] = regs->r_edi;
+      thread->regs.values[4] = regs->r_esi;
+      thread->regs.values[5] = regs->r_ebp;
+      thread->regs.values[6] = regs->r_isp;
+      thread->regs.values[7] = regs->r_ebx;
+      thread->regs.values[8] = regs->r_edx;
+      thread->regs.values[9] = regs->r_ecx;
+      thread->regs.values[10] = regs->r_eax;
+      thread->regs.values[11] = regs->r_trapno;
+      thread->regs.values[12] = regs->r_err;
+      thread->regs.values[13] = regs->r_eip;
+      thread->regs.values[14] = regs->r_cs;
+      thread->regs.values[15] = regs->r_eflags;
+      thread->regs.values[16] = regs->r_esp;
+      thread->regs.values[17] = regs->r_ss;
+      thread->regs.values[18] = regs->r_gs;
+
+      thread->regs.ip = regs->r_eip;
+      thread->stack.frame = regs->r_ebp;
+      thread->stack.top = regs->r_esp;
+    }
+  }
+#else
+  abort();
+#endif
 
   /* Find stack start address, end of the segment */
   err = cd_obj_init_segments((cd_obj_t*) obj);
@@ -597,10 +689,11 @@ cd_error_t cd_elf_obj_get_thread(cd_elf_obj_t* obj,
 }
 
 
-cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
-                                        Elf64_Nhdr* nhdr,
-                                        char* desc,
-                                        void* arg) {
+#if defined(NT_FILE)
+static cd_error_t cd_elf_obj_load_dsos_nt_file(cd_elf_obj_t* obj,
+                                               Elf64_Nhdr* nhdr,
+                                               char* desc,
+                                               void* arg) {
   struct {
     uint64_t count;
     uint64_t page_size;
@@ -663,7 +756,86 @@ cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
       continue;
   }
 
-  return cd_ok();
+  return cd_error(kCDErrSkip);
+}
+#endif  /* NT_FILE */
+
+
+#if defined(NT_PROCSTAT_VMMAP)
+static cd_error_t cd_elf_obj_load_dsos_vmmap(cd_elf_obj_t* obj,
+                                             Elf64_Nhdr* nhdr,
+                                             char* desc,
+                                             void* arg) {
+  char* ptr;
+  char* end;
+  struct kinfo_vmentry* entry;
+  const char* last;
+
+  if (nhdr->n_type != NT_PROCSTAT_VMMAP)
+    return cd_ok();
+
+  end = desc + nhdr->n_descsz;
+  last = NULL;
+
+  /* Skip some initial word */
+  for (ptr = desc + 4; ptr < end; ptr += entry->kve_structsize) {
+    cd_error_t err;
+    cd_obj_t* image;
+    cd_obj_opts_t opts;
+
+    entry = (struct kinfo_vmentry*) ptr;
+
+    if (entry->kve_type != KVME_TYPE_VNODE || entry->kve_offset != 0)
+      continue;
+
+    /* Filter out duplicates */
+    if (last != NULL && strcmp(last, entry->kve_path) == 0)
+      continue;
+    last = entry->kve_path;
+
+    opts.parent = (cd_obj_t*) obj;
+    opts.reloc = entry->kve_start;
+
+    image = cd_obj_new_ex(cd_elf_obj_method, entry->kve_path, &opts, &err);
+    if (!cd_is_ok(err))
+      continue;
+  }
+
+  return cd_error(kCDErrSkip);
+}
+#endif  /* NT_PROCSTAT_VMMAP */
+
+
+cd_error_t cd_elf_obj_load_dsos_iterate(cd_elf_obj_t* obj,
+                                        Elf64_Nhdr* nhdr,
+                                        char* desc,
+                                        void* arg) {
+  cd_error_t err;
+
+  err = cd_error_str(kCDErrNotFound, "dsos info");
+
+  /* Linux */
+#if defined(NT_FILE)
+  err = cd_elf_obj_load_dsos_nt_file(obj, nhdr, desc, arg);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+
+  if (!cd_is_ok(err))
+    goto done;
+#endif  /* NT_FILE */
+
+  /* FreeBSD */
+#if defined(NT_PROCSTAT_VMMAP)
+  err = cd_elf_obj_load_dsos_vmmap(obj, nhdr, desc, arg);
+  if (err.code == kCDErrSkip)
+    return cd_ok();
+
+  if (!cd_is_ok(err))
+    goto done;
+#endif  /* NT_PROCSTAT_VMMAP */
+
+done:
+  return err;
 }
 
 

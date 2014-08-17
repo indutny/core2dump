@@ -23,7 +23,7 @@
         ],
       }],
       # ELF
-      ["OS == 'linux'", {
+      ["OS == 'linux' or OS == 'freebsd'", {
         "sources": [
           "src/obj/elf.c",
         ],
