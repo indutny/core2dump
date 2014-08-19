@@ -73,9 +73,6 @@ static const int kCDV8MapFieldCount = 2;
     X(frametype_InternalFrame)                                                \
     X(frametype_JavaScriptFrame)                                              \
     X(frametype_OptimizedFrame)                                               \
-    X(bit_field2_elements_kind_mask)                                          \
-    X(bit_field2_elements_kind_shift)                                         \
-    X(bit_field3_dictionary_map_shift)                                        \
     X(off_fp_args)                                                            \
     X(off_fp_context)                                                         \
     X(off_fp_function)                                                        \
@@ -184,6 +181,9 @@ static const int kCDV8MapFieldCount = 2;
     X(elements_fast_holey_elements, 3)                                        \
     X(elements_fast_elements, 2)                                              \
     X(elements_dictionary_elements, 6)                                        \
+    X(bit_field2_elements_kind_mask, 0xf8)                                    \
+    X(bit_field2_elements_kind_shift, 3)                                      \
+    X(bit_field3_dictionary_map_shift, 24)                                    \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
