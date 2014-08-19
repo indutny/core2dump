@@ -178,7 +178,8 @@ static const int kCDV8MapFieldCount = 2;
     X(type_JSWeakSet__JS_WEAK_SET_TYPE, -1)                                   \
     X(type_PropertyCell__PROPERTY_CELL_TYPE, -1)                              \
     X(OddballTheHole, 2)                                                      \
-    X(class_Map__bit_field2__char, class_Map__instance_attributes__int + 3)   \
+    X(class_Map__bit_field2__char,                                            \
+      cd_v8_class_Map__instance_attributes__int + 3)                          \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
