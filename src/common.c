@@ -102,7 +102,7 @@ int cd_hashmap_insert(cd_hashmap_t* map,
       break;
 
     /* Grow is needed */
-    if (map->count < kCDHashmapGrowRateLimit)
+    if ((int) map->count < kCDHashmapGrowRateLimit)
       grow = map->count;
     else
       grow = kCDHashmapGrowRateLimit;
