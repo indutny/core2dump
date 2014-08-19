@@ -20,7 +20,6 @@ static const int kCDV8MapFieldCount = 2;
     X(IsNotStringMask)                                                        \
     X(NotStringTag)                                                           \
     X(PointerSizeLog2)                                                        \
-    X(OddballTheHole)                                                         \
     X(SeqStringTag)                                                           \
     X(ConsStringTag)                                                          \
     X(SmiShiftSize)                                                           \
@@ -179,6 +178,7 @@ static const int kCDV8MapFieldCount = 2;
     X(type_JSTypedArray__JS_TYPED_ARRAY_TYPE, -1)                             \
     X(type_JSWeakSet__JS_WEAK_SET_TYPE, -1)                                   \
     X(type_PropertyCell__PROPERTY_CELL_TYPE, -1)                              \
+    X(OddballTheHole, 2)                                                      \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
