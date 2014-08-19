@@ -59,8 +59,6 @@ static const int kCDV8MapFieldCount = 2;
     X(class_Map__instance_size__int)                                          \
     X(class_Script__source__Object)                                           \
     X(class_Script__name__Object)                                             \
-    X(class_Script__line_offset__SMI)                                         \
-    X(class_Script__column_offset__SMI)                                       \
     X(class_Script__context_data__Object)                                     \
     X(class_SharedFunctionInfo__inferred_name__String)                        \
     X(class_SharedFunctionInfo__name__Object)                                 \
@@ -181,7 +179,11 @@ static const int kCDV8MapFieldCount = 2;
     X(class_UnseededNumberDictionaryShape__prefix_size__int, 0)               \
     X(class_NumberDictionaryShape__entry_size__int, 3)                        \
     X(class_Oddball__kind_offset__int,                                        \
-      cd_v8_class_HeapObject__map__Map + (core->is_x64 ? 8 : 4) * 4)          \
+      cd_v8_class_HeapObject__map__Map + ptr_size * 4)                        \
+    X(class_Script__line_offset__SMI,                                         \
+      cd_v8_class_Script__name__Object + ptr_size)                            \
+    X(class_Script__column_offset__SMI,                                       \
+      cd_v8_class_Script__line_offset__SMI + ptr_size)                        \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);

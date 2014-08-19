@@ -52,9 +52,13 @@ static int cd_v8_initialized;
     } while (0);                                                              \
 
 cd_error_t cd_v8_init(cd_obj_t* core) {
+  int ptr_size;
+
   if (cd_v8_initialized)
     return cd_ok();
 
+  /* Used in some optional consts */
+  ptr_size = core->is_x64 ? 8 : 4;
   CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_LOAD_REQUIRED_CONSTANT);
   CD_V8_OPTIONAL_CONSTANTS_ENUM(CD_V8_LOAD_OPTIONAL_CONSTANT);
 
