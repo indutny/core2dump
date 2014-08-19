@@ -65,9 +65,6 @@ static const int kCDV8MapFieldCount = 2;
     X(class_SharedFunctionInfo__script__Object)                               \
     X(class_String__length__SMI)                                              \
     X(class_JSRegExp__data__Object)                                           \
-    X(elements_fast_holey_elements)                                           \
-    X(elements_fast_elements)                                                 \
-    X(elements_dictionary_elements)                                           \
     X(frametype_ArgumentsAdaptorFrame)                                        \
     X(frametype_ConstructFrame)                                               \
     X(frametype_EntryConstructFrame)                                          \
@@ -184,6 +181,9 @@ static const int kCDV8MapFieldCount = 2;
       cd_v8_class_Script__name__Object + ptr_size)                            \
     X(class_Script__column_offset__SMI,                                       \
       cd_v8_class_Script__line_offset__SMI + ptr_size)                        \
+    X(elements_fast_holey_elements, 3)                                        \
+    X(elements_fast_elements, 2)                                              \
+    X(elements_dictionary_elements, 6)                                        \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
