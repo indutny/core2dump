@@ -812,6 +812,7 @@ cd_error_t cd_dwarf_treg(cd_obj_thread_t* thread,
     case kCDDwarfRegFrame: *res = &thread->stack.frame; break;
     case kCDDwarfRegStack: *res = &thread->stack.top; break;
     case kCDDwarfRegIP: *res = &thread->regs.ip; break;
+    default: abort(); break;
   }
   return cd_ok();
 }
@@ -831,6 +832,7 @@ uint64_t cd_dwarf_reg_off(cd_dwarf_reg_t reg, int x64) {
       case kCDDwarfRegIP: return 8;
     }
   }
+  abort();
 }
 
 
