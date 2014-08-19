@@ -57,7 +57,6 @@ static const int kCDV8MapFieldCount = 2;
     X(class_Map__instance_attributes__int)                                    \
     X(class_Map__instance_descriptors__DescriptorArray)                       \
     X(class_Map__instance_size__int)                                          \
-    X(class_Map__prototype__Object)                                           \
     X(class_SeededNumberDictionaryShape__prefix_size__int)                    \
     X(class_UnseededNumberDictionaryShape__prefix_size__int)                  \
     X(class_NumberDictionaryShape__entry_size__int)                           \
@@ -180,6 +179,8 @@ static const int kCDV8MapFieldCount = 2;
     X(OddballTheHole, 2)                                                      \
     X(class_Map__bit_field2__char,                                            \
       cd_v8_class_Map__instance_attributes__int + 3)                          \
+    X(class_Map__prototype__Object,                                           \
+      cd_v8_class_Map__instance_attributes__int + 4)                          \
 
 #define CD_V8_CONSTANT_VALUE(V) int cd_v8_##V;
 CD_V8_REQUIRED_CONSTANTS_ENUM(CD_V8_CONSTANT_VALUE);
