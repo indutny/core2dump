@@ -56,7 +56,7 @@ void cd_print_help(const char* name) {
               " --version, -v           Print version\n"
               " --help, -h              Print this message\n"
               " --trace, -t             Print only a stack trace\n"
-              " --thread-id             Id of thread in core file to use\n"
+              " --thread-id=num         Id of thread in core file to use\n"
               " --core PATH, -c PATH    Specify core file (Required)\n"
               " --binary PATH, -b PATH  Specify binary\n"
               " --output PATH, -o PATH  Specify output    (Default: stdout)\n",
@@ -105,6 +105,10 @@ int main(int argc, char** argv) {
         cargv.trace = 1;
         break;
       case CD_THREAD_ID_CMD:
+        if (optarg == NULL) {
+          cd_print_help(argv[0]);
+          return 0;
+        }
         cargv.thread_id = atoi(optarg);
         break;
       default:
