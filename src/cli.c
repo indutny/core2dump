@@ -2,6 +2,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "error.h"
@@ -23,6 +25,7 @@ struct cd_argv_s {
   const char* binary;
   const char* output;
   int trace;
+  int thread_id;
 };
 
 static cd_error_t run(cd_argv_t* argv);
@@ -53,11 +56,15 @@ void cd_print_help(const char* name) {
               " --version, -v           Print version\n"
               " --help, -h              Print this message\n"
               " --trace, -t             Print only a stack trace\n"
+              " --thread-id             Id of thread in core file to use\n"
               " --core PATH, -c PATH    Specify core file (Required)\n"
               " --binary PATH, -b PATH  Specify binary\n"
               " --output PATH, -o PATH  Specify output    (Default: stdout)\n",
           name);
 }
+
+
+#define CD_THREAD_ID_CMD 0x1000
 
 
 int main(int argc, char** argv) {
@@ -68,15 +75,13 @@ int main(int argc, char** argv) {
     { "output", 3, NULL, 'o' },
     { "binary", 4, NULL, 'b' },
     { "trace", 5, NULL, 't' },
+    { "thread-id", 5, NULL, CD_THREAD_ID_CMD },
   };
   int c;
   cd_argv_t cargv;
   cd_error_t err;
 
-  cargv.core = NULL;
-  cargv.output = NULL;
-  cargv.binary = NULL;
-  cargv.trace = 0;
+  memset(&cargv, 0, sizeof(cargv));
 
   do {
     c = getopt_long(argc, argv, "hvtc:b:o:", long_options, NULL);
@@ -98,6 +103,9 @@ int main(int argc, char** argv) {
         break;
       case 't':
         cargv.trace = 1;
+        break;
+      case CD_THREAD_ID_CMD:
+        cargv.thread_id = atoi(optarg);
         break;
       default:
         c = -1;
@@ -122,6 +130,9 @@ int main(int argc, char** argv) {
 
   return 0;
 }
+
+
+#undef CD_THREAD_ID_CMD
 
 
 /* Open files and execute obj2json */
@@ -154,6 +165,8 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
 #else
   abort();
 #endif
+
+  state.thread_id = argv->thread_id;
 
   state.core = cd_obj_new(method, argv->core, &err);
   if (!cd_is_ok(err))

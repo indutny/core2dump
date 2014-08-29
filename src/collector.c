@@ -185,7 +185,7 @@ cd_error_t cd_collect_v8_frame(cd_state_t* state, cd_js_frame_t* frame) {
   /* First frame - collect registers too */
   if (state->frame_count == 0) {
     unsigned int j;
-    err = cd_obj_get_thread(state->core, 0, &thread);
+    err = cd_obj_get_thread(state->core, state->thread_id, &thread);
     if (!cd_is_ok(err))
       return err;
 
@@ -230,5 +230,8 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
   if (!cd_is_ok(err))
     return err;
 
-  return cd_obj_iterate_stack(state->core, 0, cd_collect_frame, state);
+  return cd_obj_iterate_stack(state->core,
+                              state->thread_id,
+                              cd_collect_frame,
+                              state);
 }

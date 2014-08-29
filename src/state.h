@@ -11,6 +11,7 @@ typedef struct cd_state_s cd_state_t;
 
 struct cd_state_s {
   cd_obj_t* core;
+  int thread_id;
   int output;
   int ptr_size;
 
