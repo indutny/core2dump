@@ -23,6 +23,9 @@ cd_error_t cd_v8_get_obj_type(cd_state_t* state,
                               int* type) {
   uint8_t* ptype;
 
+  if (!V8_IS_HEAPOBJECT(obj))
+    return cd_error(kCDErrNotObject);
+
   LAZY_MAP
 
   /* Load object type */
