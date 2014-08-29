@@ -22,26 +22,63 @@ static void cd_splay(cd_splay_t* splay,
                      cd_splay_node_t** c);
 
 
-uint32_t cd_jenkins(const char* str, unsigned int len) {
+#define CD_MURMUR3_C1 0xcc9e2d51
+#define CD_MURMUR3_C2 0x1b873593
+
+
+uint32_t cd_murmur3(const char* key, unsigned int len) {
   uint32_t hash;
+  const uint32_t* chunks;
+  unsigned int chunk_count;
   unsigned int i;
+  uint32_t tail;
 
   hash = 0;
-  for (i = 0; i < len; i++) {
-    unsigned char ch;
 
-    ch = (unsigned char) str[i];
-    hash += ch;
-    hash += hash << 10;
-    hash ^= hash >> 6;
+  chunks = (const uint32_t*) key;
+  chunk_count = len / 4;
+  for (i = 0; i < chunk_count; i++) {
+    uint32_t k;
+
+    k = chunks[i];
+    k *= CD_MURMUR3_C1;
+    k = (k << 15) | (k >> 17);
+    k *= CD_MURMUR3_C2;
+
+    hash ^= k;
+    hash = (hash << 13) | (hash >> 19);
+    hash *= 5;
+    hash += 0xe6546b64;
   }
 
-  hash += hash << 3;
-  hash ^= hash >> 11;
-  hash += hash << 15;
+  tail = 0;
+  chunk_count *= 4;
+  for (i = len - 1; i >= chunk_count; i--) {
+    tail <<= 8;
+    tail += chunks[i];
+  }
+  if (tail != 0) {
+    tail *= CD_MURMUR3_C1;
+    tail = (tail << 15) | (tail >> 17);
+    tail *= CD_MURMUR3_C2;
+
+    hash ^= tail;
+  }
+
+  hash ^= len;
+
+  hash ^= hash >> 16;
+  hash *= 0x85ebca6b;
+  hash ^= hash >> 13;
+  hash *= 0xc2b2ae35;
+  hash ^= hash >> 16;
 
   return hash;
 }
+
+
+#undef CD_MURMUR3_C1
+#undef CD_MURMUR3_C2
 
 
 int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr) {
@@ -77,9 +114,9 @@ int cd_hashmap_insert(cd_hashmap_t* map,
     unsigned int grow;
 
     if (map->ptr)
-      index = cd_jenkins((const char*) &key, key_len) % map->count;
+      index = cd_murmur3((const char*) &key, key_len) % map->count;
     else
-      index = cd_jenkins(key, key_len) % map->count;
+      index = cd_murmur3(key, key_len) % map->count;
 
     for (skip = 0;
          skip < kCDHashmapMaxSkip && map->items[index].key != NULL;
@@ -145,9 +182,9 @@ void* cd_hashmap_get(cd_hashmap_t* map,
   uint32_t index;
 
   if (map->ptr)
-    index = cd_jenkins((const char*) &key, key_len) % map->count;
+    index = cd_murmur3((const char*) &key, key_len) % map->count;
   else
-    index = cd_jenkins(key, key_len) % map->count;
+    index = cd_murmur3(key, key_len) % map->count;
 
   do {
     cd_hashmap_item_t* item;
@@ -176,9 +213,9 @@ void cd_hashmap_delete(cd_hashmap_t* map,
   uint32_t index;
 
   if (map->ptr)
-    index = cd_jenkins((const char*) &key, key_len) % map->count;
+    index = cd_murmur3((const char*) &key, key_len) % map->count;
   else
-    index = cd_jenkins(key, key_len) % map->count;
+    index = cd_murmur3(key, key_len) % map->count;
 
   do {
     cd_hashmap_item_t* item;

@@ -46,7 +46,7 @@ struct cd_splay_node_s {
   void* value;
 };
 
-uint32_t cd_jenkins(const char* str, unsigned int len);
+uint32_t cd_murmur3(const char* str, unsigned int len);
 
 int cd_hashmap_init(cd_hashmap_t* map, unsigned int count, int ptr);
 void cd_hashmap_destroy(cd_hashmap_t* map);
