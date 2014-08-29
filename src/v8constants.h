@@ -139,8 +139,8 @@ static const int kCDV8MapFieldCount = 2;
     X(type_SlicedString__SLICED_ASCII_STRING_TYPE, -1)                        \
     X(type_SlicedString__SLICED_STRING_TYPE, -1)                              \
     X(class_Map__dependent_code__DependentCode, -1)                           \
-    X(class_StringDictionaryShape__prefix_size__int, -1)                      \
-    X(class_StringDictionaryShape__entry_size__int, -1)                       \
+    X(class_StringDictionaryShape__prefix_size__int, 2)                       \
+    X(class_StringDictionaryShape__entry_size__int, 3)                        \
     X(class_NameDictionaryShape__prefix_size__int,                            \
       cd_v8_class_StringDictionaryShape__prefix_size__int)                    \
     X(class_NameDictionaryShape__entry_size__int,                             \
