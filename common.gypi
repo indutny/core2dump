@@ -43,7 +43,6 @@
       ],
       "WARNING_CFLAGS": [
         "-Wall",
-        "-Werror",
         "-Wendif-labels",
         "-W",
         "-Wno-unused-parameter",
