@@ -29,8 +29,8 @@ static void cd_splay(cd_splay_t* splay,
 uint32_t cd_murmur3(const char* key, unsigned int len) {
   uint32_t hash;
   const uint32_t* chunks;
-  unsigned int chunk_count;
-  unsigned int i;
+  int chunk_count;
+  int i;
   uint32_t tail;
 
   hash = 0;
