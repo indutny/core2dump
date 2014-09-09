@@ -55,7 +55,7 @@ uint32_t cd_murmur3(const char* key, unsigned int len) {
   chunk_count *= 4;
   for (i = len - 1; i >= chunk_count; i--) {
     tail <<= 8;
-    tail += chunks[i];
+    tail += key[i];
   }
   if (tail != 0) {
     tail *= CD_MURMUR3_C1;

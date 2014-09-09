@@ -446,6 +446,9 @@ cd_error_t cd_obj_lookup_ip(cd_obj_t* obj,
   if (!cd_is_ok(err))
     return err;
 
+  if (obj->cfa == NULL)
+    goto not_found;
+
   *fde = NULL;
   err = cd_dwarf_get_fde(obj->cfa, addr - obj->aslr, fde);
   if (err.code == kCDErrNotFound)
