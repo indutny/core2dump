@@ -26,6 +26,7 @@ struct cd_argv_s {
   const char* output;
   int trace;
   int thread_id;
+  intptr_t inspect;
 };
 
 static cd_error_t run(cd_argv_t* argv);
@@ -75,7 +76,8 @@ int main(int argc, char** argv) {
     { "output", 3, NULL, 'o' },
     { "binary", 4, NULL, 'b' },
     { "trace", 5, NULL, 't' },
-    { "thread-id", 5, NULL, CD_THREAD_ID_CMD },
+    { "thread-id", 6, NULL, CD_THREAD_ID_CMD },
+    { "inspect", 7, NULL, 'i' },
   };
   int c;
   cd_argv_t cargv;
@@ -84,7 +86,7 @@ int main(int argc, char** argv) {
   memset(&cargv, 0, sizeof(cargv));
 
   do {
-    c = getopt_long(argc, argv, "hvtc:b:o:", long_options, NULL);
+    c = getopt_long(argc, argv, "hvtc:b:o:i:", long_options, NULL);
     switch (c) {
       case 'v':
         cd_print_version();
@@ -111,6 +113,8 @@ int main(int argc, char** argv) {
         }
         cargv.thread_id = atoi(optarg);
         break;
+      case 'i':
+        cargv.inspect = cd_str_to_addr(optarg);
       default:
         c = -1;
         break;
@@ -209,6 +213,11 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
   err = cd_visitor_init(&state);
   if (!cd_is_ok(err))
     goto failed_visitor_init;
+
+  if (argv->inspect != 0)
+    err = cd_collect_addr(&state, argv->inspect);
+  if (!cd_is_ok(err))
+    goto failed_collect_roots;
 
   err = cd_collect_roots(&state);
   if (!cd_is_ok(err))

@@ -32,5 +32,6 @@ cd_error_t cd_collector_init(struct cd_state_s* state);
 void cd_collector_destroy(struct cd_state_s* state);
 
 cd_error_t cd_collect_roots(struct cd_state_s* state);
+cd_error_t cd_collect_addr(struct cd_state_s* state, intptr_t addr);
 
 #endif  /* SRC_COLLECTOR_H_ */

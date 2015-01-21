@@ -503,3 +503,28 @@ void* cd_splay_find(cd_splay_t* splay, void* val) {
 done:
   return r->value;
 }
+
+
+intptr_t cd_str_to_addr(const char* str) {
+  intptr_t res;
+
+  // Skip leading zeroes, and 0x0
+  while (*str == '0' || *str == 'x')
+    str++;
+
+  for (res = 0; *str != '\0'; str++) {
+    char d;
+
+    res *= 0x10;
+
+    d = *str;
+    if (d >= '0' && d <= '9')
+      res += d - '0';
+    else if (d >= 'a' && d <= 'f')
+      res += d - 'a' + 0xa;
+    else if (d >= 'A' && d <= 'F')
+      res += d - 'A' + 0xa;
+  }
+
+  return res;
+}

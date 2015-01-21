@@ -235,3 +235,15 @@ cd_error_t cd_collect_roots(cd_state_t* state) {
                               cd_collect_frame,
                               state);
 }
+
+
+cd_error_t cd_collect_addr(struct cd_state_s* state, intptr_t addr) {
+  return cd_queue_ptr(state,
+                      &state->nodes.root,
+                      (void*) addr,
+                      NULL,
+                      kCDEdgeElement,
+                      0,
+                      0,
+                      NULL);
+}

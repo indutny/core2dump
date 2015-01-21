@@ -74,6 +74,8 @@ void cd_splay_destroy(cd_splay_t* splay);
 int cd_splay_insert(cd_splay_t* splay, void* val);
 void* cd_splay_find(cd_splay_t* splay, void* val);
 
+intptr_t cd_str_to_addr(const char* str);
+
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 #define container_of(ptr, type, member) \
