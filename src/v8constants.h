@@ -5,7 +5,11 @@
 #include "obj.h"
 
 /* node.js v0.10 default values */
-#include "node/node-0-10-ia32.h"
+#ifdef __x86_64__
+# include "node/node-0-10-x64.h"
+#else
+# include "node/node-0-10-ia32.h"
+#endif
 
 static const int kCDV8RegExpPattern = 1;
 static const int kCDV8MapFieldOffset = 4;
