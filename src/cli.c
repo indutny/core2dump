@@ -368,10 +368,10 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
       cd_edge_t* edge;
       cd_edge_t* next;
 
-      edge = container_of(eq, cd_edge_t, out);
+      edge = container_of(eq, cd_edge_t, in);
       if (eq != QUEUE_PREV(&node->edges.incoming)) {
         eq = QUEUE_NEXT(eq);
-        next = container_of(eq, cd_edge_t, out);
+        next = container_of(eq, cd_edge_t, in);
       } else {
         next = NULL;
       }
