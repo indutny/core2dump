@@ -216,10 +216,8 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
 
   if (argv->inspect != 0)
     err = cd_collect_addr(&state, argv->inspect);
-  if (!cd_is_ok(err))
-    goto failed_collect_roots;
-
-  err = cd_collect_roots(&state);
+  else
+    err = cd_collect_roots(&state);
   if (!cd_is_ok(err))
     goto failed_collect_roots;
 
