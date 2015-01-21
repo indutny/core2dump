@@ -92,6 +92,7 @@ cd_error_t cd_visitor_init(cd_state_t* state) {
   QUEUE_INIT(&root->edges.incoming);
   QUEUE_INIT(&root->edges.outgoing);
   root->edges.outgoing_count = 0;
+  root->edges.incoming_count = 0;
 
   err = cd_strings_copy(&state->strings, NULL, &root->name, "(GC roots)", 10);
   if (!cd_is_ok(err))
@@ -661,6 +662,7 @@ cd_error_t cd_node_init(cd_state_t* state,
   QUEUE_INIT(&node->edges.incoming);
   QUEUE_INIT(&node->edges.outgoing);
   node->edges.outgoing_count = 0;
+  node->edges.incoming_count = 0;
 
   return cd_ok();
 }
@@ -679,6 +681,7 @@ void cd_node_free(cd_state_t* state, cd_node_t* node) {
     QUEUE_REMOVE(&edge->out);
 
     edge->key.from->edges.outgoing_count--;
+    edge->key.to->edges.incoming_count--;
     cd_hashmap_delete(&state->edges.map,
                       (const char*) &edge->key,
                       sizeof(edge->key));
@@ -775,6 +778,7 @@ cd_error_t cd_queue_ptr(cd_state_t* state,
   }
 
   from->edges.outgoing_count++;
+  node->edges.incoming_count++;
 
   QUEUE_INSERT_TAIL(&from->edges.outgoing, &edge->out);
   QUEUE_INSERT_TAIL(&node->edges.incoming, &edge->in);
