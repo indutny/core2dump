@@ -344,7 +344,7 @@ void cd_print_nodes(cd_state_t* state, cd_writebuf_t* buf) {
         node->name,
         node->id,
         node->size,
-        node->edges.incoming_count,
+        node->edges.outgoing_count,
         0);
 
     if (q != QUEUE_PREV(&state->nodes.list))
@@ -364,12 +364,12 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
     cd_node_t* node;
 
     node = container_of(nq, cd_node_t, member);
-    QUEUE_FOREACH(eq, &node->edges.incoming) {
+    QUEUE_FOREACH(eq, &node->edges.outgoing) {
       cd_edge_t* edge;
       cd_edge_t* next;
 
       edge = container_of(eq, cd_edge_t, out);
-      if (eq != QUEUE_PREV(&node->edges.incoming)) {
+      if (eq != QUEUE_PREV(&node->edges.outgoing)) {
         eq = QUEUE_NEXT(eq);
         next = container_of(eq, cd_edge_t, out);
       } else {
@@ -382,7 +382,7 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
             "    %d, %d, %d",
             edge->type,
             edge->name,
-            edge->key.from->id * kCDNodeFieldCount);
+            edge->key.to->id * kCDNodeFieldCount);
       } else {
         cd_writebuf_put(
             buf,
@@ -390,13 +390,13 @@ void cd_print_edges(cd_state_t* state, cd_writebuf_t* buf) {
             "    %d, %d, %d",
             edge->type,
             edge->name,
-            edge->key.from->id * kCDNodeFieldCount,
+            edge->key.to->id * kCDNodeFieldCount,
             next->type,
             next->name,
-            next->key.from->id * kCDNodeFieldCount);
+            next->key.to->id * kCDNodeFieldCount);
       }
 
-      if (eq != QUEUE_PREV(&node->edges.incoming) ||
+      if (eq != QUEUE_PREV(&node->edges.outgoing) ||
           nq != QUEUE_PREV(&state->nodes.list)) {
         cd_writebuf_put(buf, ",\n");
       } else {

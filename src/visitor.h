@@ -55,7 +55,6 @@ struct cd_node_s {
     QUEUE incoming;
     QUEUE outgoing;
     int outgoing_count;
-    int incoming_count;
   } edges;
 };
 
