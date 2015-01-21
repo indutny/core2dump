@@ -191,9 +191,11 @@ static const int kCDV8MapFieldCount = 2;
 
 #define CD_V8_OPTIONAL_CONSTANTS_ENUM(X)                                      \
     X(SlicedStringTag, -1)                                                    \
-    X(class_SlicedString__offset__SMI, -1)                                    \
-    X(type_SlicedString__SLICED_ASCII_STRING_TYPE, -1)                        \
-    X(type_SlicedString__SLICED_STRING_TYPE, -1)                              \
+    X(class_SlicedString__offset__SMI, V8DBG_CLASS_SLICEDSTRING__OFFSET__SMI) \
+    X(type_SlicedString__SLICED_ASCII_STRING_TYPE,                            \
+      V8DBG_TYPE_SLICEDSTRING__SLICED_ASCII_STRING_TYPE)                      \
+    X(type_SlicedString__SLICED_STRING_TYPE,                                  \
+      V8DBG_TYPE_SLICEDSTRING__SLICED_STRING_TYPE)                            \
     X(class_Map__dependent_code__DependentCode, -1)                           \
     X(class_StringDictionaryShape__prefix_size__int,                          \
       V8DBG_CLASS_STRINGDICTIONARYSHAPE__PREFIX_SIZE__INT)                    \
@@ -203,15 +205,17 @@ static const int kCDV8MapFieldCount = 2;
       cd_v8_class_StringDictionaryShape__prefix_size__int)                    \
     X(class_NameDictionaryShape__entry_size__int,                             \
       cd_v8_class_StringDictionaryShape__entry_size__int)                     \
-    X(class_SeqAsciiString__chars__char, -1)                                  \
-    X(type_SeqAsciiString__ASCII_STRING_TYPE, -1)                             \
+    X(class_SeqAsciiString__chars__char,                                      \
+      V8DBG_CLASS_SEQASCIISTRING__CHARS__CHAR)                                \
+    X(type_SeqAsciiString__ASCII_STRING_TYPE,                                 \
+      V8DBG_TYPE_SEQASCIISTRING__ASCII_STRING_TYPE)                           \
     X(class_SeqOneByteString__chars__char,                                    \
       cd_v8_class_SeqAsciiString__chars__char)                                \
     X(type_SeqOneByteString__ASCII_STRING_TYPE,                               \
       cd_v8_type_SeqAsciiString__ASCII_STRING_TYPE)                           \
     X(class_SeqTwoByteString__chars__char,                                    \
       cd_v8_class_SeqOneByteString__chars__char)                              \
-    X(class_Script__id__Object, -1)                                           \
+    X(class_Script__id__Object, V8DBG_CLASS_SCRIPT__ID__OBJECT)               \
     X(class_Script__id__Smi,                                                  \
       cd_v8_class_Script__id__Object)                                         \
     /* node.js v0.10 defaults */                                              \
