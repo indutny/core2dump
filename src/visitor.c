@@ -356,7 +356,7 @@ cd_error_t cd_tag_obj_slow_props(cd_state_t* state,
   int entry;
 
   prefix = cd_v8_class_NameDictionaryShape__prefix_size__int;
-  entry = cd_v8_class_NameDictionaryShape__prefix_size__int;
+  entry = cd_v8_class_NameDictionaryShape__entry_size__int;
 
   if ((size - prefix) % entry != 0)
     return cd_error(kCDErrNotSoFast);
