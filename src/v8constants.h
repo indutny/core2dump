@@ -16,11 +16,8 @@ static const int kCDV8MapFieldOffset = 4;
 static const int kCDV8MapFieldCount = 2;
 
 #define CD_V8_REQUIRED_CONSTANTS_ENUM(X)                                      \
-    X(AsciiStringTag, V8DBG_ASCIISTRINGTAG)                                   \
     X(ConsStringTag, V8DBG_CONSSTRINGTAG)                                     \
     X(ExternalStringTag, V8DBG_EXTERNALSTRINGTAG)                             \
-    X(FailureTag, V8DBG_FAILURETAG)                                           \
-    X(FailureTagMask, V8DBG_FAILURETAGMASK)                                   \
     X(FirstNonstringType, V8DBG_FIRSTNONSTRINGTYPE)                           \
     X(HeapObjectTag, V8DBG_HEAPOBJECTTAG)                                     \
     X(HeapObjectTagMask, V8DBG_HEAPOBJECTTAGMASK)                             \
@@ -49,10 +46,6 @@ static const int kCDV8MapFieldCount = 2;
     X(class_FreeSpace__size__SMI, V8DBG_CLASS_FREESPACE__SIZE__SMI)           \
     X(class_GlobalObject__builtins__JSBuiltinsObject,                         \
       V8DBG_CLASS_GLOBALOBJECT__BUILTINS__JSBUILTINSOBJECT)                   \
-    X(class_GlobalObject__global_context__Context,                            \
-      V8DBG_CLASS_GLOBALOBJECT__GLOBAL_CONTEXT__CONTEXT)                      \
-    X(class_GlobalObject__global_receiver__JSObject,                          \
-      V8DBG_CLASS_GLOBALOBJECT__GLOBAL_RECEIVER__JSOBJECT)                    \
     X(class_GlobalObject__native_context__Context,                            \
       V8DBG_CLASS_GLOBALOBJECT__NATIVE_CONTEXT__CONTEXT)                      \
     X(class_HeapNumber__value__double, V8DBG_CLASS_HEAPNUMBER__VALUE__DOUBLE) \
@@ -68,14 +61,9 @@ static const int kCDV8MapFieldCount = 2;
       V8DBG_CLASS_JSFUNCTION__PROTOTYPE_OR_INITIAL_MAP__OBJECT)               \
     X(class_JSFunction__shared__SharedFunctionInfo,                           \
       V8DBG_CLASS_JSFUNCTION__SHARED__SHAREDFUNCTIONINFO)                     \
-    X(class_JSMap__table__Object, V8DBG_CLASS_JSMAP__TABLE__OBJECT)           \
     X(class_JSObject__properties__FixedArray,                                 \
       V8DBG_CLASS_JSOBJECT__PROPERTIES__FIXEDARRAY)                           \
-    X(class_Map__bit_field3__SMI, V8DBG_CLASS_MAP__BIT_FIELD3__SMI)           \
     X(class_Map__code_cache__Object, V8DBG_CLASS_MAP__CODE_CACHE__OBJECT)     \
-    X(class_Map__constructor__Object, V8DBG_CLASS_MAP__CONSTRUCTOR__OBJECT)   \
-    X(class_Map__inobject_properties__int,                                    \
-      V8DBG_CLASS_MAP__INOBJECT_PROPERTIES__INT)                              \
     X(class_Map__instance_attributes__int,                                    \
       V8DBG_CLASS_MAP__INSTANCE_ATTRIBUTES__INT)                              \
     X(class_Map__instance_descriptors__DescriptorArray,                       \
@@ -112,7 +100,6 @@ static const int kCDV8MapFieldCount = 2;
     X(prop_desc_value, V8DBG_PROP_DESC_VALUE)                                 \
     X(prop_idx_first, V8DBG_PROP_IDX_FIRST)                                   \
     X(prop_type_field, V8DBG_PROP_TYPE_FIELD)                                 \
-    X(prop_type_first_phantom, V8DBG_PROP_TYPE_FIRST_PHANTOM)                 \
     X(prop_type_mask, V8DBG_PROP_TYPE_MASK)                                   \
     X(type_AccessorPair__ACCESSOR_PAIR_TYPE,                                  \
       V8DBG_TYPE_ACCESSORPAIR__ACCESSOR_PAIR_TYPE)                            \
@@ -127,13 +114,9 @@ static const int kCDV8MapFieldCount = 2;
       V8DBG_TYPE_CALLHANDLERINFO__CALL_HANDLER_INFO_TYPE)                     \
     X(type_CodeCache__CODE_CACHE_TYPE, V8DBG_TYPE_CODECACHE__CODE_CACHE_TYPE) \
     X(type_Code__CODE_TYPE, V8DBG_TYPE_CODE__CODE_TYPE)                       \
-    X(type_ConsString__CONS_ASCII_STRING_TYPE,                                \
-      V8DBG_TYPE_CONSSTRING__CONS_ASCII_STRING_TYPE)                          \
     X(type_ConsString__CONS_STRING_TYPE,                                      \
       V8DBG_TYPE_CONSSTRING__CONS_STRING_TYPE)                                \
     X(type_DebugInfo__DEBUG_INFO_TYPE, V8DBG_TYPE_DEBUGINFO__DEBUG_INFO_TYPE) \
-    X(type_ExternalAsciiString__EXTERNAL_ASCII_STRING_TYPE,                   \
-      V8DBG_TYPE_EXTERNALASCIISTRING__EXTERNAL_ASCII_STRING_TYPE)             \
     X(type_ExternalTwoByteString__EXTERNAL_STRING_TYPE,                       \
       V8DBG_TYPE_EXTERNALTWOBYTESTRING__EXTERNAL_STRING_TYPE)                 \
     X(type_FixedArray__FIXED_ARRAY_TYPE,                                      \
@@ -158,14 +141,12 @@ static const int kCDV8MapFieldCount = 2;
       V8DBG_TYPE_JSFUNCTION__JS_FUNCTION_TYPE)                                \
     X(type_JSGlobalObject__JS_GLOBAL_OBJECT_TYPE,                             \
       V8DBG_TYPE_JSGLOBALOBJECT__JS_GLOBAL_OBJECT_TYPE)                       \
-    X(type_JSMap__JS_MAP_TYPE, V8DBG_TYPE_JSMAP__JS_MAP_TYPE)                 \
     X(type_JSMessageObject__JS_MESSAGE_OBJECT_TYPE,                           \
       V8DBG_TYPE_JSMESSAGEOBJECT__JS_MESSAGE_OBJECT_TYPE)                     \
     X(type_JSModule__JS_MODULE_TYPE, V8DBG_TYPE_JSMODULE__JS_MODULE_TYPE)     \
     X(type_JSObject__JS_OBJECT_TYPE, V8DBG_TYPE_JSOBJECT__JS_OBJECT_TYPE)     \
     X(type_JSProxy__JS_PROXY_TYPE, V8DBG_TYPE_JSPROXY__JS_PROXY_TYPE)         \
     X(type_JSRegExp__JS_REGEXP_TYPE, V8DBG_TYPE_JSREGEXP__JS_REGEXP_TYPE)     \
-    X(type_JSSet__JS_SET_TYPE, V8DBG_TYPE_JSSET__JS_SET_TYPE)                 \
     X(type_JSValue__JS_VALUE_TYPE, V8DBG_TYPE_JSVALUE__JS_VALUE_TYPE)         \
     X(type_JSWeakMap__JS_WEAK_MAP_TYPE,                                       \
       V8DBG_TYPE_JSWEAKMAP__JS_WEAK_MAP_TYPE)                                 \
@@ -178,8 +159,6 @@ static const int kCDV8MapFieldCount = 2;
     X(type_Script__SCRIPT_TYPE, V8DBG_TYPE_SCRIPT__SCRIPT_TYPE)               \
     X(type_SharedFunctionInfo__SHARED_FUNCTION_INFO_TYPE,                     \
       V8DBG_TYPE_SHAREDFUNCTIONINFO__SHARED_FUNCTION_INFO_TYPE)               \
-    X(type_SignatureInfo__SIGNATURE_INFO_TYPE,                                \
-      V8DBG_TYPE_SIGNATUREINFO__SIGNATURE_INFO_TYPE)                          \
     X(type_SeqTwoByteString__STRING_TYPE,                                     \
       V8DBG_TYPE_SEQTWOBYTESTRING__STRING_TYPE)                               \
     X(type_SeqTwoByteString__SYMBOL_TYPE,                                     \
@@ -190,7 +169,31 @@ static const int kCDV8MapFieldCount = 2;
       V8DBG_TYPE_TYPESWITCHINFO__TYPE_SWITCH_INFO_TYPE)                       \
 
 #define CD_V8_OPTIONAL_CONSTANTS_ENUM(X)                                      \
+    X(OneByteStringTag, V8DBG_ASCIISTRINGTAG)                                 \
+    X(AsciiStringTag, cd_v8_OneByteStringTag)                                 \
     X(SlicedStringTag, -1)                                                    \
+    X(type_ConsString__CONS_ONE_BYTE_STRING_TYPE,                             \
+      V8DBG_TYPE_CONSSTRING__CONS_ASCII_STRING_TYPE)                          \
+    X(type_ConsString__CONS_ASCII_STRING_TYPE,                                \
+      cd_v8_type_ConsString__CONS_ONE_BYTE_STRING_TYPE)                       \
+    X(type_ExternalString__EXTERNAL_ONE_BYTE_STRING_TYPE,                     \
+      V8DBG_TYPE_EXTERNALASCIISTRING__EXTERNAL_ASCII_STRING_TYPE)             \
+    X(type_ExternalAsciiString__EXTERNAL_ASCII_STRING_TYPE,                   \
+      cd_v8_type_ExternalString__EXTERNAL_ONE_BYTE_STRING_TYPE)               \
+    X(class_GlobalObject__global_context__Context,                            \
+      V8DBG_CLASS_GLOBALOBJECT__GLOBAL_CONTEXT__CONTEXT)                      \
+    X(class_GlobalObject__global_receiver__JSObject,                          \
+      V8DBG_CLASS_GLOBALOBJECT__GLOBAL_RECEIVER__JSOBJECT)                    \
+    X(class_Map__bit_field3__int, V8DBG_CLASS_MAP__BIT_FIELD3__SMI)           \
+    X(class_Map__bit_field3__SMI, cd_v8_class_Map__bit_field3__int)           \
+    X(class_Map__constructor_or_backpointer__Object,                          \
+      V8DBG_CLASS_MAP__CONSTRUCTOR__OBJECT)                                   \
+    X(class_Map__constructor__Object,                                         \
+      cd_v8_class_Map__constructor_or_backpointer__Object)                    \
+    X(class_Map__inobject_properties_or_constructor_function_index__int,      \
+      V8DBG_CLASS_MAP__INOBJECT_PROPERTIES__INT)                              \
+    X(class_Map__inobject_properties__int,                                    \
+      cd_v8_class_Map__inobject_properties_or_constructor_function_index__int)\
     X(class_SlicedString__offset__SMI, V8DBG_CLASS_SLICEDSTRING__OFFSET__SMI) \
     X(type_SlicedString__SLICED_ASCII_STRING_TYPE,                            \
       V8DBG_TYPE_SLICEDSTRING__SLICED_ASCII_STRING_TYPE)                      \
