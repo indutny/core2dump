@@ -28,10 +28,12 @@ for (var i = 0; i < paths.length; i++) {
     }
 
     var out = path.resolve(root, 'npm', exename);
+    console.error('Found binary %s', filename);
     try {
       fs.unlinkSync(out);
     } catch (e) {
     }
+    console.error('Linking binary %s to %s', filename, out);
     try {
       fs.symlinkSync(filename, out);
     } catch (e) {
