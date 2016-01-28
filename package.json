@@ -3,11 +3,11 @@
   "version": "0.3.1",
   "description": "Core 2 Dump",
   "bin": {
-    "core2dump": "./npm/core2dump"
+    "core2dump": "npm/core2dump"
   },
   "main": "index.js",
   "scripts": {
-    "preinstall": "node-gyp configure && node-gyp rebuild && node npm/locate.js",
+    "preinstall": "node-gyp configure && node-gyp rebuild && node ./npm/locate.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

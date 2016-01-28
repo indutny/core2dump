@@ -171,6 +171,7 @@ cd_error_t cd_obj2json(int output, cd_argv_t* argv) {
 #elif defined(__linux__) || defined(__FreeBSD__)
   method = cd_elf_obj_method;
 #else
+# error Only OS X, Linux, and FreeBSD are supported
   abort();
 #endif
 
