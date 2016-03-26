@@ -30,17 +30,17 @@
       }],
     ],
   },
-       {
-         "target_name": "copy_binary",
-         "type":"none",
-         "dependencies" : [ "core2dump" ],
-         "copies":
-         [
-            {
-               'destination': '<(module_root_dir)/bin/',
-               'files': ['<(module_root_dir)/build/Release/core2dump']
-            }
-         ]
-      }
+    {
+      "target_name": "copy_binary",
+      "type":"none",
+      "dependencies" : [ "core2dump" ],
+      "copies":
+        [
+        {
+          'destination': '<(module_root_dir)/bin/',
+          'files': ['<(module_root_dir)/build/Release/core2dump']
+        }
+        ]
+    }
   ],
 }
