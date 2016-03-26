@@ -1,6 +1,6 @@
 {
   "name": "core2dump",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Core 2 Dump",
   "bin": {
     "core2dump": "bin/core2dump"
